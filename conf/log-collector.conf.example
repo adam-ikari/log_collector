@@ -1,0 +1,14 @@
+# conf/log-collector.conf.example
+[server]
+listen_addr = 0.0.0.0
+tcp_port = 5140
+udp_port = 5140
+max_connections = 1024
+
+[worker]
+worker_count = 4
+buffer_slot_size = 4096
+buffer_slot_count = 1024
+
+[storage]
+log_dir = /var/log/collector
