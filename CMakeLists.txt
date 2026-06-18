@@ -23,6 +23,7 @@ add_executable(log_collector
     src/daemon.c
     src/file_writer.c
     src/log_parser.c
+    src/master.c
     src/shm_buffer.c
     src/signal_handler.c
     src/worker.c
