@@ -20,6 +20,10 @@ find_package(Threads REQUIRED)
 add_executable(log_collector
     src/main.c
     src/config.c
+    src/daemon.c
+    src/file_writer.c
+    src/log_parser.c
+    src/signal_handler.c
 )
 
 target_include_directories(log_collector PRIVATE
