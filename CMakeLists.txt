@@ -23,7 +23,9 @@ add_executable(log_collector
     src/daemon.c
     src/file_writer.c
     src/log_parser.c
+    src/shm_buffer.c
     src/signal_handler.c
+    src/worker.c
 )
 
 target_include_directories(log_collector PRIVATE
