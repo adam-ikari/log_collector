@@ -14,12 +14,26 @@ static void config_set_defaults(config_t *cfg) {
 }
 
 static void trim_whitespace(char *line) {
+    char *start = line;
     char *end;
-    while (isspace((unsigned char)*line)) line++;
-    if (*line == '\0') return;
-    end = line + strlen(line) - 1;
-    while (end > line && isspace((unsigned char)*end)) end--;
+
+    /* 跳过前导空白 */
+    while (isspace((unsigned char)*start)) start++;
+
+    if (*start == '\0') {
+        *line = '\0';
+        return;
+    }
+
+    /* 跳过尾部空白 */
+    end = start + strlen(start) - 1;
+    while (end > start && isspace((unsigned char)*end)) end--;
     *(end + 1) = '\0';
+
+    /* 将去除前导空白后的内容移到缓冲区开头 */
+    if (start != line) {
+        memmove(line, start, strlen(start) + 1);
+    }
 }
 
 static int parse_int(const char *str, int *out) {

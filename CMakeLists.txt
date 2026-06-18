@@ -19,6 +19,7 @@ find_package(Threads REQUIRED)
 
 add_executable(log_collector
     src/main.c
+    src/config.c
 )
 
 target_include_directories(log_collector PRIVATE
@@ -30,6 +31,13 @@ target_link_libraries(log_collector PRIVATE
     Threads::Threads
     rt
 )
+
+# Tests
+option(BUILD_TESTS "Build tests" ON)
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 install(TARGETS log_collector RUNTIME DESTINATION sbin)
 install(FILES conf/log-collector.conf.example DESTINATION /etc)
