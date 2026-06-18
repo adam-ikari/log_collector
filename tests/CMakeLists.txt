@@ -21,3 +21,11 @@ target_include_directories(test_file_writer PRIVATE
 )
 target_link_libraries(test_file_writer PRIVATE Threads::Threads rt)
 add_test(NAME test_file_writer COMMAND test_file_writer)
+
+add_executable(test_shm_buffer test_shm_buffer.c ../src/shm_buffer.c)
+target_include_directories(test_shm_buffer PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(test_shm_buffer PRIVATE Threads::Threads rt)
+add_test(NAME test_shm_buffer COMMAND test_shm_buffer)

@@ -31,6 +31,7 @@
 
 /* 缓冲区配置常量 */
 #define SHM_NAME               "/log_collector_shm"
+#define SHM_FILE_PATH           "/tmp/log_collector_shm"
 #define SEM_FREE_NAME          "/log_collector_sem_free"
 #define SEM_USED_NAME          "/log_collector_sem_used"
 #define SHM_MAGIC              0x4C434F47  /* "LCOG" */
@@ -78,7 +79,8 @@ typedef struct {
     uint64_t write_pos;
     uint64_t read_pos;
     pthread_mutex_t mutex;
-    /* sem_t 使用命名信号量，不嵌入结构体 */
+    sem_t  sem_free;  /* 空闲槽位信号量 */
+    sem_t  sem_used;  /* 已用槽位信号量 */
 } shm_header_t;
 
 /* 日志槽位 (柔性数组成员) */
