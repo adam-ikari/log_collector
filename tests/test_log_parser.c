@@ -20,7 +20,7 @@ static void test_basic_syslog(void) {
     len = log_parser_format(&addr, 1655562725, msg, (uint32_t)strlen(msg), out, sizeof(out));
     assert(len > 0);
     assert(strstr(out, "192.168.1.100") != NULL);
-    assert(strstr(out, "[warning]") != NULL);  /* severity 5 = warning (13 & 0x07 = 5) */
+    assert(strstr(out, "[notice]") != NULL);  /* severity 5 = notice (13 & 0x07 = 5) */
     assert(strstr(out, "connection timeout") != NULL);
     assert(out[len - 1] == '\n');
     printf("PASS: test_basic_syslog\n");
