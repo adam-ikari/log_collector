@@ -4,6 +4,10 @@
 
 #include "common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Worker 文件写入上下文 */
 typedef struct {
     int   fd;                 /* 当前文件句柄 */
@@ -22,5 +26,9 @@ int file_writer_write(file_writer_t *fw, const char *ip,
 
 /* 关闭当前文件 */
 void file_writer_close(file_writer_t *fw);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FILE_WRITER_H */

@@ -1,12 +1,27 @@
 /* src/log_parser.c */
 #include "log_parser.h"
 
+/*
+ * log_parser.c — Syslog 日志解析器
+ *
+ * 负责解析原始 syslog 消息，提取 PRI（severity）、
+ * 格式化输出为：timestamp ip [level] message\n
+ *
+ * Syslog PRI 格式：<N> 其中 N = facility * 8 + severity
+ * severity 取值范围 0-7：emerg, alert, crit, err, warning, notice, info, debug
+ */
+
 static const char *severity_names[] = {
     "emerg", "alert", "crit", "err",
     "warning", "notice", "info", "debug"
 };
 
-/* 将 sockaddr 转换为 IP 字符串 */
+/*
+ * addr_to_str — 将 sockaddr_storage 转换为 IP 字符串
+ *
+ * 支持 IPv4 (AF_INET) 和 IPv6 (AF_INET6)。
+ * 未知地址族返回 "unknown"。
+ */
 static const char *addr_to_str(const struct sockaddr_storage *addr,
                                char *buf, size_t buf_size) {
     if (addr->ss_family == AF_INET) {
@@ -16,12 +31,17 @@ static const char *addr_to_str(const struct sockaddr_storage *addr,
         const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
         inet_ntop(AF_INET6, &sin6->sin6_addr, buf, (socklen_t)buf_size);
     } else {
-        strncpy(buf, "unknown", buf_size - 1);
+        snprintf(buf, buf_size, "unknown");
     }
     return buf;
 }
 
-/* 从 <PRI> 前缀中提取 severity */
+/*
+ * extract_pri — 从 <PRI> 前缀中提取 severity
+ *
+ * syslog PRI = facility * 8 + severity，severity 取低 3 位（pri & 0x07）。
+ * 返回 PRI 部分的长度（含尖括号），失败返回 -1。
+ */
 static int extract_pri(const char *msg, uint32_t len, int *severity_out) {
     const char *end;
     long pri;
@@ -36,6 +56,14 @@ static int extract_pri(const char *msg, uint32_t len, int *severity_out) {
     return (int)(end - msg + 1);
 }
 
+/*
+ * log_parser_format — 格式化一条日志为人类可读的行
+ *
+ * 输出格式：YYYY-MM-DDTHH:MM:SS±TZ IP [level] message\n
+ * 优先级提取失败时默认 severity=debug。
+ * 如果 body 不以换行结尾，自动追加 '\n'。
+ * 返回实际写入字节数，-1 表示错误。
+ */
 int log_parser_format(const struct sockaddr_storage *addr,
                       uint64_t recv_timestamp,
                       const char *raw_msg, uint32_t raw_len,

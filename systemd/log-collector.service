@@ -1,0 +1,16 @@
+[Unit]
+Description=Log Collector
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/log-collector.pid
+ExecStart=/usr/local/sbin/log_collector
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

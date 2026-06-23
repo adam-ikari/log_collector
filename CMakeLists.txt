@@ -6,20 +6,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic")
 
 find_package(Threads REQUIRED)
-
-# Source files to be added in subsequent tasks:
-#   src/config.c
-#   src/shm_buffer.c
-#   src/log_parser.c
-#   src/file_writer.c
-#   src/signal_handler.c
-#   src/daemon.c
-#   src/master.c
-#   src/worker.c
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SYSTEMD REQUIRED libsystemd)
 
 add_executable(log_collector
     src/main.c
-    src/config.c
     src/daemon.c
     src/file_writer.c
     src/log_parser.c
@@ -37,6 +28,13 @@ target_include_directories(log_collector PRIVATE
 target_link_libraries(log_collector PRIVATE
     Threads::Threads
     rt
+    ${SYSTEMD_LIBRARIES}
+)
+
+target_include_directories(log_collector PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${SYSTEMD_INCLUDE_DIRS}
 )
 
 # Tests
@@ -47,4 +45,4 @@ if(BUILD_TESTS)
 endif()
 
 install(TARGETS log_collector RUNTIME DESTINATION sbin)
-install(FILES conf/log-collector.conf.example DESTINATION /etc)
+install(FILES systemd/log-collector.service DESTINATION /etc/systemd/system)

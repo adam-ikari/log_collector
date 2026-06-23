@@ -4,6 +4,10 @@
 
 #include "common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* 初始化共享内存 (仅 Master 调用): 创建 shm, 设置大小, 映射, 初始化头部和信号量 */
 int shm_init(shm_header_t **header, void **slots, uint64_t slot_size,
              uint64_t slot_count);
@@ -30,5 +34,9 @@ void shm_destroy(shm_header_t *header, void *slots, uint64_t slot_count);
 
 /* Worker 端断开连接 */
 void shm_disconnect(shm_header_t *header, void *slots);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SHM_BUFFER_H */
