@@ -23,18 +23,13 @@ add_executable(log_collector
 target_include_directories(log_collector PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
+    ${SYSTEMD_INCLUDE_DIRS}
 )
 
 target_link_libraries(log_collector PRIVATE
     Threads::Threads
     rt
     ${SYSTEMD_LIBRARIES}
-)
-
-target_include_directories(log_collector PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src
-    ${SYSTEMD_INCLUDE_DIRS}
 )
 
 # Tests

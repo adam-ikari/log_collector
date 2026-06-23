@@ -314,7 +314,7 @@ static void wait_workers(pid_t *pids, int count) {
  *   5. epoll 事件主循环：
  *      a. 处理 SIGCHLD → reap_workers
  *      b. epoll_wait 100ms 超时
- *      c. TCP listener → accept4（循环到 EAGAIN）
+ *      c. TCP listener → accept（循环到 EAGAIN）
  *      d. UDP listener → handle_udp_data
  *      e. TCP client → handle_tcp_data（先读后处理挂断）
  *   6. 收到 shutdown 后：关闭监听 → 发哨兵 → 等 worker → 清客户端 → 关 epoll

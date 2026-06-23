@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-/* 将当前进程变为守护进程。成功时不返回(父进程已退出), 失败返回 -1。 */
+/* 将当前进程变为守护进程。父进程 _exit(0)，子进程返回 0，失败返回 -1。 */
 int daemonize(const char *pid_file);
 
 /* 删除 PID 文件 */

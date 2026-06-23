@@ -21,7 +21,7 @@ int shm_produce(shm_header_t *header, void *slots,
                 const struct sockaddr_storage *addr, uint8_t protocol,
                 const char *data, uint32_t data_len, uint64_t timestamp);
 
-/* 消费者读取一条日志 (Worker 调用)。返回 data_len, 0 表示哨兵(退出), -1 表示无数据 */
+/* 消费者读取一条日志 (Worker 调用)。返回 data_len (>0), 0 表示哨兵(退出) */
 int shm_consume(shm_header_t *header, void *slots, uint64_t slot_size,
                 struct sockaddr_storage *addr, uint8_t *protocol,
                 char *data, uint32_t *data_len, uint64_t *timestamp);
