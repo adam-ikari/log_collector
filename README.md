@@ -97,8 +97,6 @@ log_collector/
 │   ├── shm_buffer.c/h        # POSIX 共享内存环形缓冲区
 │   ├── log_parser.c/h        # syslog PRI 解析
 │   └── file_writer.c/h       # 按 IP+日期 写日志文件
-└── tests/
-    └── e2e_test.sh            # 端到端集成测试（9 场景 / 24 断言）
 ```
 
 ## 配置
@@ -130,13 +128,13 @@ log_collector/
 | 3 | [epoll + TCP/UDP](docs/tutorial/03-epoll-network.md) | EPOLLET 边缘触发、行缓冲、UDP 数据报 | epoll、非阻塞 Socket |
 | 4 | [POSIX 共享内存](docs/tutorial/04-shm-ringbuffer.md) | shm_open + mmap + mutex + semaphore | 共享内存、互斥锁、信号量 |
 | 5 | [进程池与 Worker](docs/tutorial/05-process-pool.md) | fork 进程池、syslog 解析、文件存储 | 进程池、文件 I/O |
-| 6 | [测试与调试](docs/tutorial/06-testing-and-debugging.md) | 单元测试、E2E、strace、GDB | CTest、strace、GDB 多进程 |
+| 6 | [测试与调试](docs/tutorial/06-testing-and-debugging.md) | E2E测试、strace、GDB | strace、GDB 多进程 |
 
 ## 测试
 
 ```bash
 # E2E 测试（9 场景 / 24 断言）
-bash tests/e2e_test.sh
+cd build && bash ../tests/e2e_test.sh
 ```
 
 ## C/C++ 兼容
