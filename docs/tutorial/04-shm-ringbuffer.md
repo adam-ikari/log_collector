@@ -319,12 +319,10 @@ $ xxd /dev/shm/log_collector_shm | head -5
 
 ## 你现在应该理解的
 
-**信号量和互斥锁各司其职**：信号量管"有没有资源"，互斥锁管"资源内部的数据别被同时改"。生产者用 `sem_trywait`（非阻塞），消费者用 `sem_wait`（阻塞）。
+**信号量和互斥锁各司其职**：信号量管"有没有资源"，互斥锁管"数据别被同时改"。生产者用 `sem_trywait`（非阻塞），消费者用 `sem_wait`（阻塞）。
 
-**POSIX 共享内存 = shm_open + mmap**：在 `/dev/shm` 下创建 tmpfs 对象，纯内存。`ftruncate` 必须在 mmap 之前调。mmap 后可以关 fd。清理用 `shm_unlink`。
+**POSIX 共享内存 = shm_open + mmap**：在 `/dev/shm` 下创建 tmpfs 对象，纯内存。`ftruncate` 在 mmap 之前，mmap 后可关 fd。
 
-**哨兵是优雅关闭的关键**：`data_len=0` 的槽位通知 Worker 退出，比信号更可靠——Worker 会处理完哨兵之前的日志再退出。
-
-**跨进程同步需要特殊设置**：`PTHREAD_PROCESS_SHARED` 和 `sem_init(..., 1, ...)` 的第二个参数是关键。
+**哨兵是优雅关闭的关键**：`data_len=0` 通知 Worker 退出。Worker 会处理完哨兵之前的日志再退出。
 
 下一篇讲 Worker 进程池——怎么 fork、怎么崩溃重启、怎么解析日志、怎么写文件。

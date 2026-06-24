@@ -354,14 +354,10 @@ $ pgrep log_collector
 
 ## 你现在应该理解的
 
-**fork 后要重置信号**：子进程继承了父进程的 handler，但它不跑主循环，不会检查 `g_shutdown`。重置为 `SIG_DFL` 让 Worker 收到信号时走默认行为。
+**fork 后要重置信号**：子进程继承了父进程的 handler，但不跑主循环，不会检查 `g_shutdown`。重置为 `SIG_DFL`。
 
-**进程池隔离崩溃**：一个 Worker 死了不影响其他。`reap_workers` 通过 SIGCHLD + waitpid(WNOHANG) 检测退出并自动补上。
+**进程池隔离崩溃**：一个 Worker 死了不影响其他，Master 自动 fork 新进程补上。
 
-**syslog PRI 取低 3 位**：`pri & 0x07` 就是 severity。没 PRI 前缀的消息默认为 debug 级别。
+**syslog PRI 取低 3 位**：`pri & 0x07` 就是 severity。没 PRI 前缀的消息默认为 debug。
 
-**文件按 IP+日期组织**：自然边界，方便 logrotate 按目录管理保留策略。`ensure_directory` 递归创建，因为 `mkdir` 不会自动创建父目录。
-
-**优雅关闭是分层的**：先关网络（不再进新数据），再发哨兵（让 Worker 处理完剩下的），最后清资源。
-
-下一篇把所有模块串起来，验证整个系统真的在工作。
+**文件按 IP+日期组织**：`ensure_directory` 递归创建目录，因为 `mkdir` 不会自动创建父目录。

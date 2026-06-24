@@ -195,11 +195,11 @@ $ pgrep log_collector
 
 ## 你现在应该理解的
 
-**double-fork 的每一步都有目的**：不是随便 fork 两次就完事。第一次为了让 setsid 成功，第二次为了防止获得控制终端。chdir("/")、umask(0)、关闭 fd——每一步都在解决一个具体的问题。
+**double-fork 的每一步都有目的**：第一次为了让 setsid 成功，第二次为了防止获得控制终端。
 
-**信号处理只要设标志**：别在 handler 里干复杂的事。设完标志马上返回，让主循环去处理。`volatile sig_atomic_t` 保证了这一点。
+**信号处理只要设标志**：别在 handler 里干复杂的事。`volatile sig_atomic_t` 保证了这一点。
 
-**Linux 上 signal() 带 SA_RESTART**：这是 `signal()` vs `sigaction()` 最大的陷阱。`siginterrupt()` 能解决。
+**Linux 上 signal() 带 SA_RESTART**：`siginterrupt()` 能解决。
 
 ## systemd 服务配置
 

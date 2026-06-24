@@ -96,14 +96,8 @@ log_collector/
 │   ├── worker.c/h        ← Worker：取数据→解析→写文件
 │   ├── log_parser.c/h    ← syslog 格式解析
 │   └── file_writer.c/h   ← 按 IP+日期 写日志文件
-├── systemd/
-│   └── log-collector.service  ← systemd 服务配置
-└── tests/
-    ├── CMakeLists.txt
-    ├── test_log_parser.c
-    ├── test_file_writer.c
-    ├── test_shm_buffer.c
-    └── e2e_test.sh
+└── systemd/
+    └── log-collector.service  ← systemd 服务配置
 ```
 
 一个 `.c` 对应一个职责。这不是教条，是经验——当你在 epoll 代码里找为什么 TCP 连接断掉的时候，你不会想同时看到共享内存的逻辑混在里面。
@@ -166,7 +160,7 @@ typedef struct {
 #define CFG_SLOT_SIZE         4096
 #define CFG_SLOT_COUNT        1024
 #define CFG_LOG_DIR           "/tmp/log_collector_test"
-#define CFG_PID_FILE          "/var/run/log-collector.pid"
+#define CFG_PID_FILE          "/tmp/log-collector.pid"
 ```
 
 每个默认值的考量：
@@ -212,55 +206,24 @@ typedef struct {
 
 `data[4096]` 是固定大小数组，与槽位大小对齐（`CFG_SLOT_SIZE = 4096`）。C 和 C++ 都支持固定大小数组，代码直观：`slot->data` 就是日志内容，不需要指针算术。
 
-## C/C++ 兼容：为什么以及怎么做
+## C/C++ 兼容
 
-### 为什么要兼容 C++
-
-这个项目用 C 写，但代码可能被 C++ 项目引用，或者学生想把某个模块（比如共享内存环形缓冲区）copy 到自己的 C++ 项目里。如果不做兼容处理，C++ 编译器会报错：
-
-**问题：函数名被"改编"（name mangling）**
-
-C++ 支持函数重载——同一个函数名可以有不同的参数类型。为了实现这个，C++ 编译器会把函数名"改编"成包含参数类型信息的符号。比如 `shm_init` 在 C++ 编译后可能变成 `_Z8shm_initPP13shm_header_tPPvmm`（这个长长的字符串编码了函数名和所有参数类型）。
-
-但 C 不支持重载，C 编译器不改编函数名——`shm_init` 编译后就是 `shm_init`。
-
-问题来了：如果 C++ 代码调用 C 编译的函数，C++ 编译器按改编后的名字去找符号 `_Z8shm_init...`，但 C 编译的 `.o` 文件里符号是 `shm_init`，链接器找不到，报 `undefined reference`。
-
-### 怎么解决
-
-**`extern "C"` 解决函数名改编问题**
-
-在所有头文件的函数声明前后包裹 `extern "C"`：
+C++ 编译器会改编（mangle）函数名以支持重载，导致链接时找不到 C 编译的符号。在所有头文件中用 `extern "C"` 包裹函数声明即可解决：
 
 ```c
-/* src/shm_buffer.h */
-#ifndef SHM_BUFFER_H
-#define SHM_BUFFER_H
-
-#include "common.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 int shm_init(shm_header_t **header, void **slots, ...);
-int shm_connect(shm_header_t **header, void **slots, ...);
-int shm_produce(shm_header_t *header, void *slots, ...);
-int shm_consume(shm_header_t *header, void *slots, ...);
-void shm_send_sentinels(shm_header_t *header, int count);
-void shm_destroy(shm_header_t *header, void *slots, uint64_t slot_count);
-void shm_disconnect(shm_header_t *header, void *slots);
+// ... 其他函数声明
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* SHM_BUFFER_H */
 ```
 
-`#ifdef __cplusplus` 是关键——这个宏只有 C++ 编译器会定义。C 编译器看不到 `extern "C"` 块，不受影响。C++ 编译器看到后，告诉链接器"这些函数用 C 的命名方式，别改编"。
-
-项目中所有 8 个头文件都做了这个处理：`common.h`、`daemon.h`、`file_writer.h`、`log_parser.h`、`master.h`、`shm_buffer.h`、`signal_handler.h`、`worker.h`。
+`#ifdef __cplusplus` 只有 C++ 编译器定义，C 编译器不受影响。项目中 8 个头文件都做了这个处理。
 
 ## 主函数：把零件串起来
 
@@ -432,4 +395,4 @@ $ ./log_collector -h
   -h   显示帮助
 ```
 
-编译零错误、零警告，帮助信息正常——骨架搭好了。接下来每完成一个模块，我们都会跑一遍编译+测试，确保每一步都是可工作的。
+编译零错误。`siginterrupt` 的 deprecation warning 是正常的——第 2 篇会解释为什么不用 `sigaction`。帮助信息正常——骨架搭好了。接下来每完成一个模块，我们都会跑一遍编译+验证，确保每一步都是可工作的。
