@@ -90,11 +90,11 @@ log_collector/
 
 按开发顺序阅读：
 
-| 序号 | 文章 | 内容 |
-|------|------|------|
-| 1 | [搭骨架](docs/tutorial/01-project-setup.md) | CMake、common.h、配置系统 |
-| 2 | [变成守护进程](docs/tutorial/02-daemon-and-signals.md) | daemonize、信号处理、main.c |
-| 3 | [接收网络日志](docs/tutorial/03-epoll-network.md) | epoll + TCP/UDP |
-| 4 | [共享内存环形缓冲区](docs/tutorial/04-shm-ringbuffer.md) | mmap + 信号量 + 互斥锁 |
-| 5 | [进程池与 Worker](docs/tutorial/05-process-pool.md) | fork 进程池、日志解析、文件存储 |
-| 6 | [串联测试与调试](docs/tutorial/06-testing-and-debugging.md) | 单元测试、E2E 测试 |
+| 序号 | 文章                                                        | 内容                            |
+| ---- | ----------------------------------------------------------- | ------------------------------- |
+| 1    | [搭骨架](docs/tutorial/01-project-setup.md)                 | CMake、common.h、配置系统       |
+| 2    | [变成守护进程](docs/tutorial/02-daemon-and-signals.md)      | daemonize、信号处理、main.c     |
+| 3    | [接收网络日志](docs/tutorial/03-epoll-network.md)           | epoll + TCP/UDP                 |
+| 4    | [共享内存环形缓冲区](docs/tutorial/04-shm-ringbuffer.md)    | mmap + 信号量 + 互斥锁          |
+| 5    | [进程池与 Worker](docs/tutorial/05-process-pool.md)         | fork 进程池、日志解析、文件存储 |
+| 6    | [串联测试与调试](docs/tutorial/06-testing-and-debugging.md) | 单元测试、E2E 测试              |
