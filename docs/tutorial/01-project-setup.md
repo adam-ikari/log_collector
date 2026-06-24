@@ -332,6 +332,66 @@ int main(int argc, char *argv[]) {
 | 5 | Master 事件循环 | master.c — epoll + fork Worker 池 |
 | 6 | 清理资源 | shm_unlink + 删除 PID 文件 |
 
+## 系统依赖安装
+
+在开始写代码之前，先把编译和运行需要的库装好。
+
+### Ubuntu/Debian
+
+```bash
+sudo apt-get install -y \
+    build-essential \
+    cmake \
+    pkg-config \
+    libsystemd-dev
+```
+
+### Fedora/RHEL
+
+```bash
+sudo dnf install -y \
+    gcc gcc-c++ \
+    cmake \
+    pkg-config \
+    systemd-devel
+```
+
+### Arch Linux
+
+```bash
+sudo pacman -S --noconfirm \
+    base-devel \
+    cmake \
+    pkg-config \
+    systemd
+```
+
+### 各依赖的用途
+
+| 包名 | 提供什么 | 为什么需要 |
+|------|---------|-----------|
+| `build-essential` / `base-devel` | gcc, make, libc | 编译 C 程序的基础工具链 |
+| `cmake` | cmake, ctest | 构建系统和测试运行器 |
+| `pkg-config` | pkg-config | CMake 通过它找到 libsystemd 的路径 |
+| `libsystemd-dev` / `systemd-devel` | libsystemd, sd-journal.h | `sd_journal_print()` 写日志到 systemd journal |
+
+> **注意**：`libsystemd-dev` 是编译时依赖（提供头文件和 `.so` 符号链接）。运行时只需要 `libsystemd0`（Ubuntu 默认已安装）。如果目标机器不装 systemd（比如 Docker 容器里），可以去掉 systemd 依赖改用 `fprintf(stderr, ...)`，但本教程假设运行在带 systemd 的 Linux 上。
+
+### 验证安装
+
+```bash
+# 确认 gcc 可用
+gcc --version | head -1
+
+# 确认 cmake 可用
+cmake --version | head -1
+
+# 确认 pkg-config 能找到 libsystemd
+pkg-config --modversion libsystemd
+```
+
+三条命令都有输出、没有报错，就可以继续了。
+
 ## 怎么验证
 
 ```bash

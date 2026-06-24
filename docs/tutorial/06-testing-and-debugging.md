@@ -2,8 +2,9 @@
 
 ## 回忆已学知识
 
-- **CMake + CTest**：`enable_testing()`、`add_test()`
+- **Shell 脚本**：`nc`、`ss`、`pkill`、`fuser`
 - **进程基础**：fork 测试、父子进程
+- **信号处理**：SIGTERM 优雅关闭、SIGKILL 强制终止
 
 ## 这次解决什么问题
 
@@ -11,56 +12,11 @@
 
 这才是实战项目最关键的环节——不是"写完就行"，而是"写对了并且能证明它对了"。
 
-## 单元测试
+## 测试策略：为什么只用 E2E
 
-没有用 CUnit、Check 这些测试框架。项目小（11 个用例），手写 `assert` 足够清晰，零依赖：
+这个项目的核心逻辑涉及多进程协作——Master fork Worker、共享内存通信、epoll 网络 I/O。这些模块紧密耦合，单独测试某个函数意义不大：你测了 `shm_produce` 能写入数据，不代表 Worker 能正确消费；你测了 `log_parser_format` 能解析 `<PRI>`，不代表 TCP 行缓冲能正确拆分消息。
 
-```c
-#include <assert.h>
-
-assert(header->magic == SHM_MAGIC);
-assert(data_len == msg_len);
-assert(strcmp(data, msg) == 0);
-```
-
-CTest 的返回值约定：`return 0` = PASS，`return 非 0` = FAIL。
-
-### test_shm_buffer（4 个用例）：测试共享内存 + 锁 + 信号量
-
-最有意思的测试——fork 父子进程模拟 Master/Worker：
-
-```c
-/* 父进程：创建共享内存 */
-shm_init(&header, &slots, 4096, 16);
-
-pid_t pid = fork();
-if (pid == 0) {
-    /* 子进程（Worker 角色）：连接并消费 */
-    shm_connect(&child_header, &child_slots, &slot_size, &slot_count);
-    shm_consume(child_header, child_slots, slot_size,
-                &addr, &protocol, data, &data_len, &timestamp);
-    assert(data_len == msg_len);       /* 数据长度一致 */
-    assert(strcmp(data, msg) == 0);    /* 内容完全一致 */
-    assert(protocol == 1);             /* UDP 标记正确 */
-    _exit(0);
-} else {
-    /* 父进程（Master 角色）：生产数据 */
-    usleep(50000);  /* 等子进程连接好 */
-    shm_produce(header, slots, &addr, 1, msg, msg_len, ts);
-    waitpid(pid, NULL, 0);
-    shm_destroy(header, slots, 16);
-}
-```
-
-4 个用例：初始化/销毁、跨进程生产消费、哨兵检测、环形队列绕回。
-
-### test_log_parser（4 个用例）
-
-验证 syslog 解析的四种情况：标准 `<PRI>` 前缀、无 PRI 前缀（默认 debug）、emerg 边界值、IPv6 地址。
-
-### test_file_writer（2 个用例）
-
-写入后读出来验证内容一致、不同 IP 创建不同目录。
+所以测试策略很直接：**把程序跑起来，用 `nc` 模拟真实客户端发数据，检查磁盘上的日志文件**。这就是端到端（E2E）测试。
 
 ## E2E 测试：9 个场景
 
@@ -117,19 +73,18 @@ kill -9 $COLLECTOR_PID 2>/dev/null || true  # 超时兜底
 ## 怎么跑测试
 
 ```bash
-cd build
-cmake .. -DBUILD_TESTS=ON
-make
-
-# 单元测试（秒级）
-ctest --output-on-failure
-
 # E2E 测试（约 1 分钟）
-cd ..
+cd log_collector
 bash tests/e2e_test.sh
 ```
 
-期望结果：3 个测试模块 PASS（11 个用例），E2E 9 个场景 24 项断言全部 PASS。
+期望结果：9 个场景 24 项断言全部 PASS。
+
+```bash
+============================================
+  Results: 24 passed, 0 failed
+============================================
+```
 
 ## 调试备忘
 

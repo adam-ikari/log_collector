@@ -59,12 +59,12 @@
 ## 快速开始
 
 ```bash
+# 安装系统依赖（Ubuntu/Debian）
+sudo apt-get install -y build-essential cmake pkg-config libsystemd-dev
+
 # 编译
 mkdir build && cd build
 cmake .. && make
-
-# 运行单元测试
-cmake .. -DBUILD_TESTS=ON && make && ctest --output-on-failure
 
 # 前台运行
 ./log_collector -f
@@ -98,10 +98,6 @@ log_collector/
 │   ├── log_parser.c/h        # syslog PRI 解析
 │   └── file_writer.c/h       # 按 IP+日期 写日志文件
 └── tests/
-    ├── CMakeLists.txt
-    ├── test_shm_buffer.c      # 共享内存单元测试（fork 跨进程）
-    ├── test_log_parser.c      # 日志解析单元测试
-    ├── test_file_writer.c     # 文件写入单元测试
     └── e2e_test.sh            # 端到端集成测试（9 场景 / 24 断言）
 ```
 
@@ -139,11 +135,8 @@ log_collector/
 ## 测试
 
 ```bash
-# 单元测试（3 模块 / 11 用例）
-cd build && ctest --output-on-failure
-
 # E2E 测试（9 场景 / 24 断言）
-cd .. && bash tests/e2e_test.sh
+bash tests/e2e_test.sh
 ```
 
 ## C/C++ 兼容
