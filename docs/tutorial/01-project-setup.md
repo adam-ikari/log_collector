@@ -323,14 +323,14 @@ int main(int argc, char *argv[]) {
 
 启动流程的 6 个步骤，每一步对应一个模块：
 
-| 步骤 | 操作 | 对应模块 |
-|------|------|---------|
-| 1 | 解析命令行参数 | getopt |
-| 2 | 守护进程化 | daemon.c — double-fork + setsid |
-| 3 | 注册信号处理 | signal_handler.c — signal + siginterrupt |
-| 4 | 创建共享内存 | shm_buffer.c — shm_open + mmap + 锁/信号量 |
-| 5 | Master 事件循环 | master.c — epoll + fork Worker 池 |
-| 6 | 清理资源 | shm_unlink + 删除 PID 文件 |
+| 步骤 | 操作            | 对应模块                                   |
+| ---- | --------------- | ------------------------------------------ |
+| 1    | 解析命令行参数  | getopt                                     |
+| 2    | 守护进程化      | daemon.c — double-fork + setsid            |
+| 3    | 注册信号处理    | signal_handler.c — signal + siginterrupt   |
+| 4    | 创建共享内存    | shm_buffer.c — shm_open + mmap + 锁/信号量 |
+| 5    | Master 事件循环 | master.c — epoll + fork Worker 池          |
+| 6    | 清理资源        | shm_unlink + 删除 PID 文件                 |
 
 ## 系统依赖安装
 
@@ -368,11 +368,11 @@ sudo pacman -S --noconfirm \
 
 ### 各依赖的用途
 
-| 包名 | 提供什么 | 为什么需要 |
-|------|---------|-----------|
-| `build-essential` / `base-devel` | gcc, make, libc | 编译 C 程序的基础工具链 |
-| `cmake` | cmake, ctest | 构建系统和测试运行器 |
-| `pkg-config` | pkg-config | CMake 通过它找到 libsystemd 的路径 |
+| 包名                               | 提供什么                 | 为什么需要                                    |
+| ---------------------------------- | ------------------------ | --------------------------------------------- |
+| `build-essential` / `base-devel`   | gcc, make, libc          | 编译 C 程序的基础工具链                       |
+| `cmake`                            | cmake, ctest             | 构建系统和测试运行器                          |
+| `pkg-config`                       | pkg-config               | CMake 通过它找到 libsystemd 的路径            |
 | `libsystemd-dev` / `systemd-devel` | libsystemd, sd-journal.h | `sd_journal_print()` 写日志到 systemd journal |
 
 > **注意**：`libsystemd-dev` 是编译时依赖（提供头文件和 `.so` 符号链接）。运行时只需要 `libsystemd0`（Ubuntu 默认已安装）。如果目标机器不装 systemd（比如 Docker 容器里），可以去掉 systemd 依赖改用 `fprintf(stderr, ...)`，但本教程假设运行在带 systemd 的 Linux 上。
@@ -395,12 +395,43 @@ pkg-config --modversion libsystemd
 ## 怎么验证
 
 ```bash
-cd log_collector
-mkdir build && cd build
-cmake .. && make
-./log_collector -h
+$ cd log_collector
+$ mkdir build && cd build
+$ cmake .. && make
+-- The C compiler identification is GNU 11.4.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Found PkgConfig: /usr/bin/pkg-config (found version "0.29.2")
+-- Checking for module 'libsystemd'
+--   Found libsystemd, version 249
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/gem/project/log_collector/build
+[ 11%] Building C object CMakeFiles/log_collector.dir/src/main.c.o
+[ 22%] Building C object CMakeFiles/log_collector.dir/src/daemon.c.o
+[ 33%] Building C object CMakeFiles/log_collector.dir/src/file_writer.c.o
+[ 44%] Building C object CMakeFiles/log_collector.dir/src/log_parser.c.o
+[ 55%] Building C object CMakeFiles/log_collector.dir/src/master.c.o
+[ 66%] Building C object CMakeFiles/log_collector.dir/src/shm_buffer.c.o
+[ 77%] Building C object CMakeFiles/log_collector.dir/src/signal_handler.c.o
+[ 88%] Building C object CMakeFiles/log_collector.dir/src/worker.c.o
+[100%] Linking C executable log_collector
+[100%] Built target log_collector
+
+$ ./log_collector -h
+用法: ./log_collector [-f]
+  -f   前台运行
+  -h   显示帮助
 ```
 
-输出帮助信息，编译零错误——搞定。接下来每完成一个模块，我们都会跑一遍编译+测试，确保每一步都是可工作的。
+编译零错误、零警告（siginterrupt 的 deprecation warning 是正常的——第 2 篇会解释为什么不用 sigaction），帮助信息正常——骨架搭好了。接下来每完成一个模块，我们都会跑一遍编译+测试，确保每一步都是可工作的。
 
 > **一个建议**：每读完一篇教程，去看对应的源文件。教程告诉你"为什么这么写"，源代码告诉你"具体怎么写"。两者对着看，效果翻倍。

@@ -114,7 +114,7 @@ log_collector/
 #define CFG_SLOT_SIZE         4096
 #define CFG_SLOT_COUNT        1024
 #define CFG_LOG_DIR           "/tmp/log_collector_test"
-#define CFG_PID_FILE          "/var/run/log-collector.pid"
+#define CFG_PID_FILE          "/tmp/log-collector.pid"
 ```
 
 修改后重新 `make` 即可生效。

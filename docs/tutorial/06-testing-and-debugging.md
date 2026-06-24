@@ -22,21 +22,22 @@
 
 `tests/e2e_test.sh` 用 `nc` 模拟真实客户端，验证完整数据流：
 
-| # | 场景 | 验证什么 |
-|---|------|---------|
-| 1 | 启动与优雅关闭 | 进程起来了，SIGTERM 后退出 |
-| 2 | UDP 单消息 | 日志内容、severity 解析、IP 记录 |
-| 3 | TCP 单消息 | TCP 连接正常，行缓冲正确拆分 |
-| 4 | 批量混合 | 10 TCP + 10 UDP，20 条全收到 |
-| 5 | 多 IP 隔离 | 目录结构按 IP 分离 |
-| 6 | severity 全级别 | PRI 0-7 全部正确映射 |
-| 7 | 高吞吐压力 | 1000 条消息，接收率 ≥ 90% |
-| 8 | Worker 崩溃恢复 | kill -9 Worker 后自动重启 |
-| 9 | 无 PRI 默认级别 | 普通文本默认 debug |
+| #   | 场景            | 验证什么                         |
+| --- | --------------- | -------------------------------- |
+| 1   | 启动与优雅关闭  | 进程起来了，SIGTERM 后退出       |
+| 2   | UDP 单消息      | 日志内容、severity 解析、IP 记录 |
+| 3   | TCP 单消息      | TCP 连接正常，行缓冲正确拆分     |
+| 4   | 批量混合        | 10 TCP + 10 UDP，20 条全收到     |
+| 5   | 多 IP 隔离      | 目录结构按 IP 分离               |
+| 6   | severity 全级别 | PRI 0-7 全部正确映射             |
+| 7   | 高吞吐压力      | 1000 条消息，接收率 ≥ 90%        |
+| 8   | Worker 崩溃恢复 | kill -9 Worker 后自动重启        |
+| 9   | 无 PRI 默认级别 | 普通文本默认 debug               |
 
 ### 压力测试的宽松判断
 
 压力测试中要求 ≥ 90% 而非 100%，原因：
+
 - UDP 天然不可靠，短期高频发送可能超过内核缓冲区
 - 网络栈的队列深度有限制
 - 测试环境可能负载波动
@@ -46,6 +47,7 @@
 ### 关键测试技巧
 
 **端口就绪检测**：TCP 测试前必须确认端口已监听，避免竞态：
+
 ```bash
 for i in $(seq 1 10); do
     if ss -tlnp 2>/dev/null | grep -q 5140; then break; fi
@@ -54,6 +56,7 @@ done
 ```
 
 **进程清理**：测试前后彻底清理残留进程和端口占用：
+
 ```bash
 pkill -9 -f "(^|/)log_collector[[:space:]]" 2>/dev/null || true
 fuser -k 5140/tcp 2>/dev/null || true
@@ -61,6 +64,7 @@ fuser -k 5140/udp 2>/dev/null || true
 ```
 
 **优雅关闭等待**：`kill -TERM` 后轮询进程是否退出，超时则 `kill -9`：
+
 ```bash
 kill -TERM $COLLECTOR_PID
 for i in $(seq 1 50); do
@@ -74,13 +78,59 @@ kill -9 $COLLECTOR_PID 2>/dev/null || true  # 超时兜底
 
 ```bash
 # E2E 测试（约 1 分钟）
-cd log_collector
-bash tests/e2e_test.sh
+cd build && bash ../tests/e2e_test.sh
 ```
 
 期望结果：9 个场景 24 项断言全部 PASS。
 
-```bash
+```
+============================================
+  Log Collector - End-to-End Test Suite
+============================================
+
+[Test 1] Startup / graceful shutdown
+  PASS: Collector started successfully (PID=2618881)
+  PASS: Collector shut down gracefully
+
+[Test 2] Single UDP message
+  PASS: UDP message written to correct IP/date file
+  PASS: UDP message has correct severity (notice=5)
+  PASS: UDP message contains client IP
+
+[Test 3] Single TCP message
+  PASS: TCP message written to file
+  PASS: TCP message has correct severity (info=6)
+
+[Test 4] Batch messages (TCP + UDP mixed)
+  PASS: Batch test: 20 messages received (>=18 expected)
+  PASS: TCP/UDP both received (TCP=10, UDP=10)
+
+[Test 5] Multi-client IP separation
+  PASS: Client IP directory exists
+  PASS: Both client messages received in same IP directory
+
+[Test 6] Syslog severity level parsing
+  PASS: Severity 0 -> emerg
+  PASS: Severity 1 -> alert
+  PASS: Severity 2 -> crit
+  PASS: Severity 3 -> err
+  PASS: Severity 4 -> warning
+  PASS: Severity 5 -> notice
+  PASS: Severity 6 -> info
+  PASS: Severity 7 -> debug
+
+[Test 7] High throughput stress (1000 messages)
+  PASS: Stress test: 1000/1000 messages received
+
+[Test 8] Worker crash recovery
+  INFO: Found 4 worker process(es)
+  PASS: Worker was restarted after crash (4 workers)
+  PASS: System functional after worker crash
+
+[Test 9] Messages without PRI prefix
+  PASS: Message without PRI received
+  PASS: No-PRI message defaults to debug severity
+
 ============================================
   Results: 24 passed, 0 failed
 ============================================
@@ -110,17 +160,20 @@ strace -f -e shm_open,shm_unlink,mmap,munmap ./log_collector -f
 ### 常见问题排查
 
 **程序启动后立即退出**：前台运行看错误信息 `./log_collector -f`。检查 `/dev/shm` 是否挂载：
+
 ```bash
 mount | grep /dev/shm
 # 如果没有：sudo mkdir -p /dev/shm && sudo mount -t tmpfs tmpfs /dev/shm
 ```
 
 **Worker 不断重启**：日志目录可能有问题。检查 syslog 输出：
+
 ```bash
 tail -f /var/log/syslog | grep log_collector
 ```
 
 **日志丢失**：可能原因——共享内存满（增大 `CFG_SLOT_COUNT`）、Worker 处理太慢（增大 `CFG_WORKER_COUNT`）、UDP 内核队列满：
+
 ```bash
 netstat -su | grep "receive errors"
 ```

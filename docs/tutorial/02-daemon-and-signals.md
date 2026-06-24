@@ -135,37 +135,62 @@ int signal_handlers_init(void) {
 
 ### 各信号的设计决策
 
-| 信号 | 默认行为 | 我们的处理 | 原因 |
-|------|---------|-----------|------|
-| SIGTERM | 终止进程 | 设置 g_shutdown=1 | 优雅关闭，先通知 Worker 退出再清理资源 |
-| SIGINT | 终止进程 | 设置 g_shutdown=1 | 前台运行时 Ctrl+C 也能优雅退出 |
-| SIGHUP | 终止进程 | 设置 g_sighup=1 | 终端断开不退出（守护进程无终端），改为重载配置 |
-| SIGCHLD | 忽略 | 设置 g_sigchld=1 | 子进程退出时收割，防止僵尸进程 |
-| SIGPIPE | 终止进程 | SIG_IGN 忽略 | 写已关闭的 socket 返回 EPIPE，不应导致进程退出 |
+| 信号    | 默认行为 | 我们的处理        | 原因                                           |
+| ------- | -------- | ----------------- | ---------------------------------------------- |
+| SIGTERM | 终止进程 | 设置 g_shutdown=1 | 优雅关闭，先通知 Worker 退出再清理资源         |
+| SIGINT  | 终止进程 | 设置 g_shutdown=1 | 前台运行时 Ctrl+C 也能优雅退出                 |
+| SIGHUP  | 终止进程 | 设置 g_sighup=1   | 终端断开不退出（守护进程无终端），改为重载配置 |
+| SIGCHLD | 忽略     | 设置 g_sigchld=1  | 子进程退出时收割，防止僵尸进程                 |
+| SIGPIPE | 终止进程 | SIG_IGN 忽略      | 写已关闭的 socket 返回 EPIPE，不应导致进程退出 |
 
 **为什么忽略 SIGPIPE？** 当向已关闭的 TCP 连接写入数据时，内核发送 SIGPIPE。默认行为是终止进程。对于网络服务器，这应该是可恢复的错误——忽略 SIGPIPE，让 `write()` 返回 -1 并设置 `errno=EPIPE`，由应用层处理。
 
 ## 怎么验证
 
 ```bash
-# 前台运行，Ctrl+C 测试信号响应
-./log_collector -f
+$ ./log_collector -f &
+$ pgrep log_collector
+2614276
+2614278
+2614279
+2614280
+2614281
+
 # 按 Ctrl+C → 程序应该退出（SIGINT → g_shutdown=1 → 主循环结束）
 
 # 后台运行，检查守护进程化
-./log_collector
-echo $?                          # 应该输出 0（父进程已退出）
-ps aux | grep log_collector      # PPID 应该是 1（被 init 收养）
-cat /var/run/log-collector.pid   # 应该有 PID
+$ ./log_collector
+$ echo $?
+0
+$ pgrep log_collector
+2622612
+2622614
+2622615
+2622616
+2622617
+# 注意：PPID 是 Master 的 PID（2622612），不是 1。
+# 这是因为我们还没写 systemd 集成——手工运行时父进程是 shell。
+# 如果是 systemd 启动，PPID 会是 1。
+
+$ cat /tmp/log-collector.pid
+2622612
 
 # 检查标准 fd 重定向
-ls -l /proc/$(pgrep log_collector)/fd
-# 应该看到 0→/dev/null, 1→/dev/null, 2→/dev/null
+$ ls -l /proc/$(pgrep log_collector | head -1)/fd
+lrwx------ 1 gem gem 64 Jun 24 08:39 0 -> /dev/null
+lrwx------ 1 gem gem 64 Jun 24 08:39 1 -> /dev/null
+lrwx------ 1 gem gem 64 Jun 24 08:39 2 -> /dev/null
+lrwx------ 1 gem gem 64 Jun 24 08:39 3 -> socket:[...]
+lrwx------ 1 gem gem 64 Jun 24 08:39 4 -> socket:[...]
+lrwx------ 1 gem gem 64 Jun 24 08:39 5 -> socket:[...]
+lrwx------ 1 gem gem 64 Jun 24 08:39 6 -> anon_inode:[eventpoll]
+# fd 0/1/2 都指向 /dev/null，network socket 和 epoll fd 是后面模块创建的
 
 # 测试 SIGTERM 优雅关闭
-kill -TERM $(pgrep log_collector)
-sleep 1
-pgrep log_collector              # 应该没有进程了
+$ kill -TERM $(pgrep log_collector | head -1)
+$ sleep 1
+$ pgrep log_collector
+# 应该没有输出（所有进程已退出）
 ```
 
 ## 你现在应该理解的
@@ -190,7 +215,7 @@ After=network.target
 
 [Service]
 Type=forking
-PIDFile=/var/run/log-collector.pid
+PIDFile=/tmp/log-collector.pid
 ExecStart=/usr/local/sbin/log_collector
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
@@ -208,7 +233,7 @@ WantedBy=multi-user.target
 
 **`Type=forking`**：关键配置。systemd 默认 `Type=simple`（认为服务进程就是它启动的那个进程）。但我们的 `daemonize()` 做了 double-fork——父进程 `_exit(0)` 退出，真正的守护进程是孙子进程。`Type=forking` 告诉 systemd：初始进程会 fork 然后退出，通过 PIDFile 追踪真正的守护进程。
 
-**`PIDFile=/var/run/log-collector.pid`**：和 `daemon.c` 里 `write_pid_file()` 写的路径一致。systemd 读取这个文件确认守护进程的 PID。
+**`PIDFile=/tmp/log-collector.pid`**：和 `daemon.c` 里 `write_pid_file()` 写的路径一致。systemd 读取这个文件确认守护进程的 PID。
 
 **`ExecStart=/usr/local/sbin/log_collector`**：不传 `-f`，让程序走 double-fork。systemd 等父进程退出后从 PID 文件获取真正 PID。
 
@@ -272,10 +297,10 @@ target_include_directories(log_collector PRIVATE ${SYSTEMD_INCLUDE_DIRS})
 
 ### 前台模式和守护进程模式的分工
 
-| 模式 | 怎么跑 | 日志去哪 |
-|------|--------|---------|
-| `-f` 前台 | `./log_collector -f` | stderr → 终端 |
-| 守护进程 | `./log_collector` 或 systemd | `sd_journal_print` → journald |
+| 模式      | 怎么跑                       | 日志去哪                      |
+| --------- | ---------------------------- | ----------------------------- |
+| `-f` 前台 | `./log_collector -f`         | stderr → 终端                 |
+| 守护进程  | `./log_collector` 或 systemd | `sd_journal_print` → journald |
 
 前台模式用于开发和调试（直接看终端输出），守护进程模式用于生产（systemd 管理生命周期，journald 收集日志）。两个模式各司其职。
 

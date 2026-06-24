@@ -15,13 +15,13 @@
 
 对于日志收集系统，为什么选进程池？
 
-| 维度 | 进程池 | 线程池 |
-|------|--------|--------|
-| 隔离性 | 一个 Worker 崩溃不影响其他 | 一个线程崩溃整个进程退出 |
-| 安全性 | 信号量/锁在进程退出时自动释放 | 线程异常退出可能留下死锁 |
-| 调试 | 可以用 strace/gdb 单独 attach | 多线程调试困难 |
-| 重启 | 子进程退出→父进程 fork 新进程 | 线程无法独立重启 |
-| 开销 | 创建开销大（fork+COW），但只创建一次 | 创建开销小 |
+| 维度   | 进程池                               | 线程池                   |
+| ------ | ------------------------------------ | ------------------------ |
+| 隔离性 | 一个 Worker 崩溃不影响其他           | 一个线程崩溃整个进程退出 |
+| 安全性 | 信号量/锁在进程退出时自动释放        | 线程异常退出可能留下死锁 |
+| 调试   | 可以用 strace/gdb 单独 attach        | 多线程调试困难           |
+| 重启   | 子进程退出→父进程 fork 新进程        | 线程无法独立重启         |
+| 开销   | 创建开销大（fork+COW），但只创建一次 | 创建开销小               |
 
 **选择进程池的核心原因**：日志写入涉及文件 I/O，如果某个日志目录的磁盘出现问题（如空间满），Worker 可能阻塞或崩溃。进程隔离保证一个 Worker 的问题不影响其他 Worker。
 
@@ -120,6 +120,7 @@ void worker_run(const config_t *cfg) {
 ```
 
 数据流一目了然：
+
 ```
 共享内存 → shm_consume → log_parser_format → file_writer_write → 磁盘文件
 ```
@@ -142,6 +143,7 @@ static int extract_pri(const char *msg, uint32_t len, int *severity_out) {
 ```
 
 `pri & 0x07` 是怎么工作的？以 `<13>` 为例：
+
 ```
 PRI = 13 = 0b1101
 0x07  = 0b0111
@@ -152,16 +154,16 @@ PRI = 13 = 0b1101
 
 severity 映射表：
 
-| 值 | 标签 | 含义 |
-|----|------|------|
-| 0 | emerg | 系统不可用 |
-| 1 | alert | 必须立即采取行动 |
-| 2 | crit | 临界条件 |
-| 3 | err | 错误条件 |
-| 4 | warning | 警告条件 |
-| 5 | notice | 正常但重要的事件 |
-| 6 | info | 信息性消息 |
-| 7 | debug | 调试级别消息 |
+| 值  | 标签    | 含义             |
+| --- | ------- | ---------------- |
+| 0   | emerg   | 系统不可用       |
+| 1   | alert   | 必须立即采取行动 |
+| 2   | crit    | 临界条件         |
+| 3   | err     | 错误条件         |
+| 4   | warning | 警告条件         |
+| 5   | notice  | 正常但重要的事件 |
+| 6   | info    | 信息性消息       |
+| 7   | debug   | 调试级别消息     |
 
 输出格式：`2026-06-21T14:32:05+08:00 192.168.1.100 [notice] connection timeout`
 
@@ -250,6 +252,7 @@ static int ensure_directory(const char *dir) {
 ```
 
 递归过程示例——创建 `/var/log/collector/192.168.1.100`：
+
 ```
 ensure_directory("/var/log/collector/192.168.1.100")
   → stat() 返回 ENOENT
@@ -311,22 +314,42 @@ Master 主循环 break
 ## 怎么验证
 
 ```bash
-# 检查 Worker 进程
-pgrep -P $(pgrep log_collector | head -1)
-# 应该看到 worker_count 个子进程（默认 4 个）
+$ ./log_collector -f &
+$ sleep 1
+
+# 检查进程树：Master + 4 Worker
+$ ps --forest -o pid,ppid,cmd $(pgrep log_collector | tr '\n' ' ')
+    PID    PPID CMD
+2618473 2618467 ./log_collector -f
+2618475 2618473  \_ ./log_collector -f
+2618476 2618473  \_ ./log_collector -f
+2618477 2618473  \_ ./log_collector -f
+2618478 2618473  \_ ./log_collector -f
+# Master (PID=2618473) 是父进程，4 个 Worker 是子进程
+
+$ pgrep -c log_collector
+5
+# Master + 4 Worker = 5 个进程
 
 # 发送日志并检查文件
-echo "<13>test message from worker test" | nc -u 127.0.0.1 5140
-sleep 0.5
-cat /tmp/log_collector_test/127.0.0.1/$(date +%Y-%m-%d).log
-# 应该看到类似：
-# 2026-06-21T14:32:05+08:00 127.0.0.1 [notice] test message from worker test
+$ echo "<13>test message from worker test" | nc -u -w1 127.0.0.1 5140
+$ sleep 0.5
+$ cat /tmp/log_collector_test/127.0.0.1/$(date +%Y-%m-%d).log
+2026-06-24T08:39:31+0800 127.0.0.1 [notice] test message from worker test
+# <13> → PRI=13 → severity=13&7=5 → [notice] ✓
 
 # 测试 Worker 崩溃恢复
-kill -9 $(pgrep -P $(pgrep log_collector | head -1) | head -1)
-sleep 1
-pgrep -P $(pgrep log_collector | head -1)
-# 应该仍然有 worker_count 个 Worker（被重启了）
+$ kill -9 2618478    # 杀掉一个 Worker
+$ sleep 2
+$ pgrep -c log_collector
+5
+# 仍然是 5 个进程（Master 检测到 SIGCHLD，自动 fork 新 Worker）
+
+# 测试优雅关闭
+$ kill -TERM 2618473  # 向 Master 发 SIGTERM
+$ sleep 2
+$ pgrep log_collector
+# 无输出——所有进程已退出
 ```
 
 ## 你现在应该理解的
