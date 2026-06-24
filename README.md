@@ -128,7 +128,7 @@ log_collector/
 | 3 | [epoll + TCP/UDP](docs/tutorial/03-epoll-network.md) | EPOLLET 边缘触发、行缓冲、UDP 数据报 | epoll、非阻塞 Socket |
 | 4 | [POSIX 共享内存](docs/tutorial/04-shm-ringbuffer.md) | shm_open + mmap + mutex + semaphore | 共享内存、互斥锁、信号量 |
 | 5 | [进程池与 Worker](docs/tutorial/05-process-pool.md) | fork 进程池、syslog 解析、文件存储 | 进程池、文件 I/O |
-| 6 | [测试与调试](docs/tutorial/06-testing-and-debugging.md) | 命令验证 9 场景、strace、GDB | strace、GDB 多进程 |
+| 6 | [测试与调试](docs/tutorial/06-testing-and-debugging.md) | 命令验证 9 场景、调试备忘 | 常见问题排查 |
 
 ## 测试
 

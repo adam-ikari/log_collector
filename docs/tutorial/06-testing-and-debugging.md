@@ -159,11 +159,6 @@ ls -l /proc/$(pgrep log_collector | head -1)/fd
 # 共享内存
 ls -la /dev/shm/log_collector_shm
 xxd /dev/shm/log_collector_shm | head -20
-
-# 追踪系统调用
-strace -f -e epoll_wait,accept,recvfrom ./log_collector -f
-strace -f -e fork,waitpid,kill ./log_collector -f
-strace -f -e shm_open,shm_unlink,mmap,munmap ./log_collector -f
 ```
 
 ### 常见问题排查
