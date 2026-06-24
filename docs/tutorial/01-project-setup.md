@@ -36,7 +36,6 @@ pkg_check_modules(SYSTEMD REQUIRED libsystemd)
 
 add_executable(log_collector
     src/main.c
-    src/daemon.c
     src/file_writer.c
     src/log_parser.c
     src/master.c
@@ -76,8 +75,6 @@ install(FILES systemd/log-collector.service DESTINATION /etc/systemd/system)
 **`rt`** —— POSIX 实时扩展库。提供 `sem_init`、`sem_wait`、`sem_post`、`shm_open` 等函数。注意 glibc 2.34+ 把信号量移到了 libc 里，但链接 `rt` 保持向后兼容。
 
 **`PRIVATE`** —— 头文件目录只在编译本项目时使用。这里只有一个 target，用 `PRIVATE` 还是 `PUBLIC` 没区别，但养成好习惯。
-
-**`install(...)`** —— 安装规则。`cmake --install build` 会把可执行文件装到 `/usr/local/sbin/`，systemd service 文件装到 `/etc/systemd/system/`。
 
 ## 目录怎么分
 
@@ -132,7 +129,7 @@ log_collector/
 
 ## 三个核心数据结构
 
-### config_t — 程序的所有可调参数
+### config_t — 程序的所有可调参数（定义在 `include/common.h`）
 
 ```c
 typedef struct {
@@ -147,7 +144,7 @@ typedef struct {
 } config_t;
 ```
 
-教学项目不需要配置文件。参数直接写在 `config.h` 里，改完重新编译：
+教学项目不需要配置文件。参数直接用 `#define` 写在 `src/config.h` 里，改完重新编译：
 
 ```c
 /* src/config.h */
