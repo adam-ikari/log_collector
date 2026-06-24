@@ -3,8 +3,7 @@ Description=Log Collector
 After=network.target
 
 [Service]
-Type=forking
-PIDFile=/var/run/log-collector.pid
+Type=simple
 ExecStart=/usr/local/sbin/log_collector
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

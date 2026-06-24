@@ -314,17 +314,17 @@ Master 主循环 break
 ## 怎么验证
 
 ```bash
-$ ./log_collector -f &
+$ ./log_collector &
 $ sleep 1
 
 # 检查进程树：Master + 4 Worker
 $ ps --forest -o pid,ppid,cmd $(pgrep log_collector | tr '\n' ' ')
     PID    PPID CMD
-2618473 2618467 ./log_collector -f
-2618475 2618473  \_ ./log_collector -f
-2618476 2618473  \_ ./log_collector -f
-2618477 2618473  \_ ./log_collector -f
-2618478 2618473  \_ ./log_collector -f
+2618473 2618467 ./log_collector
+2618475 2618473  \_ ./log_collector
+2618476 2618473  \_ ./log_collector
+2618477 2618473  \_ ./log_collector
+2618478 2618473  \_ ./log_collector
 # Master (PID=2618473) 是父进程，4 个 Worker 是子进程
 
 $ pgrep -c log_collector

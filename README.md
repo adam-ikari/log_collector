@@ -2,13 +2,13 @@
 
 基于 C99 开发的 Linux 网络日志收集系统，作为 syslog 服务端接收远程客户端通过 TCP/UDP 推送的日志，按客户端 IP 和日期分文件存储。
 
-本项目是一个教学项目，综合运用了 Linux 系统编程的核心技术：守护进程、进程池、POSIX 共享内存、信号量、互斥锁、epoll、socket。
+本项目是一个教学项目，综合运用了 Linux 系统编程的核心技术：systemd 服务、进程池、POSIX 共享内存、信号量、互斥锁、epoll、socket。
 
 ## 涉及技术
 
 | 技术 | 对应模块 | 说明 |
 |------|---------|------|
-| 守护进程 | `daemon.c` | double-fork + setsid 脱离终端 |
+| systemd 服务 | `systemd/log-collector.service` | Type=simple 管理生命周期 |
 | 信号处理 | `signal_handler.c` | signal() + siginterrupt() 优雅关闭 |
 | POSIX 共享内存 | `shm_buffer.c` | shm_open + mmap + 环形缓冲区 |
 | 信号量 | `shm_buffer.c` | sem_t 实现生产者消费者 |
@@ -24,7 +24,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Master Process (守护进程)              │
+│                    Master Process (systemd Type=simple)        │
 │  ┌─────────────┐  ┌──────────────────────────────────┐  │
 │  │  Signal      │  │  epoll Event Loop（EPOLLET）     │  │
 │  │  Handler     │  │  - TCP/UDP 监听 5140 端口        │  │
@@ -67,7 +67,7 @@ mkdir build && cd build
 cmake .. && make
 
 # 前台运行
-./log_collector -f
+./log_collector
 
 # 发送测试日志
 echo "<13>test message" | nc -u 127.0.0.1 5140
@@ -88,9 +88,8 @@ log_collector/
 ├── include/
 │   └── common.h              # 公共类型定义、常量、extern "C"
 ├── src/
-│   ├── main.c                # 入口：配置初始化、启动流程串联
+│   ├── main.c                # 入口：CLI 解析、启动流程串联
 │   ├── config.h              # 编译期配置（改参数改这里）
-│   ├── daemon.c/h            # 守护进程化（double-fork + setsid）
 │   ├── signal_handler.c/h    # 信号处理（signal + siginterrupt）
 │   ├── master.c/h            # Master：epoll 事件循环 + Worker 进程池
 │   ├── worker.c/h            # Worker：消费日志、解析、写文件
@@ -112,7 +111,6 @@ log_collector/
 #define CFG_SLOT_SIZE         4096
 #define CFG_SLOT_COUNT        1024
 #define CFG_LOG_DIR           "/tmp/log_collector_test"
-#define CFG_PID_FILE          "/tmp/log-collector.pid"
 ```
 
 修改后重新 `make` 即可生效。
@@ -124,7 +122,7 @@ log_collector/
 | # | 文章 | 内容 | 涉及技术 |
 |---|------|------|---------|
 | 1 | [搭骨架](docs/tutorial/01-project-setup.md) | CMake、common.h、配置系统 | CMake、C99 指定初始化器 |
-| 2 | [守护进程 + 信号](docs/tutorial/02-daemon-and-signals.md) | double-fork、signal()、siginterrupt() | fork、setsid、信号处理 |
+| 2 | [信号处理 + systemd](docs/tutorial/02-daemon-and-signals.md) | signal()、siginterrupt()、Type=simple | systemd 服务管理 |
 | 3 | [epoll + TCP/UDP](docs/tutorial/03-epoll-network.md) | EPOLLET 边缘触发、行缓冲、UDP 数据报 | epoll、非阻塞 Socket |
 | 4 | [POSIX 共享内存](docs/tutorial/04-shm-ringbuffer.md) | shm_open + mmap + mutex + semaphore | 共享内存、互斥锁、信号量 |
 | 5 | [进程池与 Worker](docs/tutorial/05-process-pool.md) | fork 进程池、syslog 解析、文件存储 | 进程池、文件 I/O |

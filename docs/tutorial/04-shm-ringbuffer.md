@@ -299,7 +299,7 @@ int shm_connect(shm_header_t **header_out, void **slots_out, ...) {
 ## 怎么验证
 
 ```bash
-$ ./log_collector -f &
+$ ./log_collector &
 $ ls -la /dev/shm/log_collector_shm
 -rw------- 1 gem gem 4194456 Jun 24 08:33 /dev/shm/log_collector_shm
 # 约 4MB（sizeof(shm_header_t) + 4096 × 1024 = ~4MB）

@@ -89,7 +89,6 @@ log_collector/
 ├── src/
 │   ├── main.c            ← 入口，串联一切
 │   ├── config.h          ← 编译期配置常量
-│   ├── daemon.c/h        ← 守护进程化
 │   ├── signal_handler.c/h← 信号处理
 │   ├── shm_buffer.c/h    ← POSIX 共享内存 + 互斥锁 + 信号量
 │   ├── master.c/h        ← Master：epoll 事件循环 + fork Worker 池
@@ -160,7 +159,6 @@ typedef struct {
 #define CFG_SLOT_SIZE         4096
 #define CFG_SLOT_COUNT        1024
 #define CFG_LOG_DIR           "/tmp/log_collector_test"
-#define CFG_PID_FILE          "/tmp/log-collector.pid"
 ```
 
 每个默认值的考量：
@@ -241,59 +239,48 @@ int main(int argc, char *argv[]) {
     };
     shm_header_t *shm_header = NULL;
     void *slots = NULL;
-    int foreground = 0, opt, rc;
+    int opt, rc;
 
-    /* 1. 解析参数：只认 -f（前台）和 -h（帮助） */
-    while ((opt = getopt(argc, argv, "fh")) != -1) {
+    /* 1. 解析参数：只认 -h（帮助） */
+    while ((opt = getopt(argc, argv, "h")) != -1) {
         switch (opt) {
-        case 'f': foreground = 1; break;
         case 'h': print_usage(argv[0]); return 0;
         default:  print_usage(argv[0]); return 1;
         }
     }
 
-    /* 2. 变成守护进程（-f 跳过） */
-    if (!foreground && daemonize(CFG_PID_FILE) < 0) {
-        fprintf(stderr, "变成守护进程失败\n");
-        return 1;
-    }
-
-    /* 3. 注册信号 */
+    /* 2. 注册信号 */
     if (signal_handlers_init() < 0) {
         sd_journal_print(LOG_ERR, "信号注册失败");
-        if (!foreground) daemon_cleanup(CFG_PID_FILE);
         return 1;
     }
 
-    /* 4. 创建共享内存 */
+    /* 3. 创建共享内存 */
     if (shm_init(&shm_header, &slots, cfg.slot_size, cfg.slot_count) < 0) {
         sd_journal_print(LOG_ERR, "共享内存初始化失败");
-        if (!foreground) daemon_cleanup(CFG_PID_FILE);
         return 1;
     }
 
-    /* 5. Master 主循环（fork Worker + epoll） */
+    /* 4. Master 主循环（fork Worker + epoll） */
     rc = master_run(&cfg, shm_header, slots);
 
-    /* 6. 清理 */
+    /* 5. 清理 */
     shm_destroy(shm_header, slots, cfg.slot_count);
-    if (!foreground) daemon_cleanup(CFG_PID_FILE);
     return rc;
 }
 ```
 
 这就是整个程序的骨架。`config_t` 用 C99 的**指定初始化器**（designated initializer）直接初始化，省掉了逐字段赋值的啰嗦代码。
 
-启动流程的 6 个步骤，每一步对应一个模块：
+启动流程的 5 个步骤，每一步对应一个模块：
 
 | 步骤 | 操作            | 对应模块                                   |
 | ---- | --------------- | ------------------------------------------ |
 | 1    | 解析命令行参数  | getopt                                     |
-| 2    | 守护进程化      | daemon.c — double-fork + setsid            |
-| 3    | 注册信号处理    | signal_handler.c — signal + siginterrupt   |
-| 4    | 创建共享内存    | shm_buffer.c — shm_open + mmap + 锁/信号量 |
-| 5    | Master 事件循环 | master.c — epoll + fork Worker 池          |
-| 6    | 清理资源        | shm_unlink + 删除 PID 文件                 |
+| 2    | 注册信号处理    | signal_handler.c — signal + siginterrupt   |
+| 3    | 创建共享内存    | shm_buffer.c — shm_open + mmap + 锁/信号量 |
+| 4    | Master 事件循环 | master.c — epoll + fork Worker 池          |
+| 5    | 清理资源        | shm_unlink                                |
 
 ## 系统依赖安装
 
@@ -379,19 +366,17 @@ $ cmake .. && make
 -- Generating done
 -- Build files have been written to: /home/gem/project/log_collector/build
 [ 11%] Building C object CMakeFiles/log_collector.dir/src/main.c.o
-[ 22%] Building C object CMakeFiles/log_collector.dir/src/daemon.c.o
-[ 33%] Building C object CMakeFiles/log_collector.dir/src/file_writer.c.o
-[ 44%] Building C object CMakeFiles/log_collector.dir/src/log_parser.c.o
-[ 55%] Building C object CMakeFiles/log_collector.dir/src/master.c.o
-[ 66%] Building C object CMakeFiles/log_collector.dir/src/shm_buffer.c.o
-[ 77%] Building C object CMakeFiles/log_collector.dir/src/signal_handler.c.o
-[ 88%] Building C object CMakeFiles/log_collector.dir/src/worker.c.o
-[100%] Linking C executable log_collector
+[ 22%] Building C object CMakeFiles/log_collector.dir/src/file_writer.c.o
+[ 33%] Building C object CMakeFiles/log_collector.dir/src/log_parser.c.o
+[ 44%] Building C object CMakeFiles/log_collector.dir/src/master.c.o
+[ 55%] Building C object CMakeFiles/log_collector.dir/src/shm_buffer.c.o
+[ 66%] Building C object CMakeFiles/log_collector.dir/src/signal_handler.c.o
+[ 77%] Building C object CMakeFiles/log_collector.dir/src/worker.c.o
+[ 88%] Linking C executable log_collector
 [100%] Built target log_collector
 
 $ ./log_collector -h
-用法: ./log_collector [-f]
-  -f   前台运行
+用法: ./log_collector [-h]
   -h   显示帮助
 ```
 

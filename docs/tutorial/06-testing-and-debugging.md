@@ -17,7 +17,7 @@
 ### 1. 启动与优雅关闭
 
 ```bash
-$ ./log_collector -f &
+$ ./log_collector &
 $ pgrep log_collector
 2618473
 2618475
@@ -35,7 +35,7 @@ $ pgrep log_collector
 ### 2. UDP 单消息
 
 ```bash
-$ ./log_collector -f &
+$ ./log_collector &
 $ echo "<13>UDP connection timeout" | nc -u -w1 127.0.0.1 5140
 $ sleep 0.5
 $ cat /tmp/log_collector_test/127.0.0.1/$(date +%Y-%m-%d).log
@@ -114,11 +114,11 @@ $ grep -c "stress" /tmp/log_collector_test/127.0.0.1/$(date +%Y-%m-%d).log
 ```bash
 $ ps --forest -o pid,ppid,cmd $(pgrep log_collector | tr '\n' ' ')
     PID    PPID CMD
-2618473 2618467 ./log_collector -f
-2618475 2618473  \_ ./log_collector -f
-2618476 2618473  \_ ./log_collector -f
-2618477 2618473  \_ ./log_collector -f
-2618478 2618473  \_ ./log_collector -f
+2618473 2618467 ./log_collector
+2618475 2618473  \_ ./log_collector
+2618476 2618473  \_ ./log_collector
+2618477 2618473  \_ ./log_collector
+2618478 2618473  \_ ./log_collector
 
 $ kill -9 2618478   # 杀掉一个 Worker
 $ sleep 2
@@ -163,7 +163,7 @@ xxd /dev/shm/log_collector_shm | head -20
 
 ### 常见问题排查
 
-**程序启动后立即退出**：前台运行看错误信息 `./log_collector -f`。检查 `/dev/shm` 是否挂载：
+**程序启动后立即退出**：前台运行看错误信息 `./log_collector`。检查 `/dev/shm` 是否挂载：
 
 ```bash
 mount | grep /dev/shm

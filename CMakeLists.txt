@@ -11,7 +11,6 @@ pkg_check_modules(SYSTEMD REQUIRED libsystemd)
 
 add_executable(log_collector
     src/main.c
-    src/daemon.c
     src/file_writer.c
     src/log_parser.c
     src/master.c
