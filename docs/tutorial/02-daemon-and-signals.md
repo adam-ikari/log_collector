@@ -15,13 +15,58 @@
 
 现代 Linux 上，守护进程化由 systemd 负责，程序本身只写业务逻辑。`Type=simple` 是最简单的方式：systemd 直接启动程序，程序就是服务进程，不需要自己 fork。
 
+## 本篇要创建/修改的文件
+
+| 操作 | 文件 | 说明 |
+|------|------|------|
+| 修改 | `src/signal_handler.h` | 替换空壳，写入信号处理函数声明 |
+| 修改 | `src/signal_handler.c` | 替换空壳，实现信号注册和 handler |
+| 修改 | `src/main.c` | 添加信号注册、启动日志、完整启动流程 |
+| 修改 | `CMakeLists.txt` | 添加 libsystemd 依赖（pkg-config） |
+| 创建 | `systemd/log-collector.service` | systemd 服务单元文件 |
+
 ## 信号处理：最小化原则
+
+### signal_handler.h
+
+替换第 1 篇创建的空壳 `src/signal_handler.h`，写入完整内容：
+
+```c
+/* src/signal_handler.h */
+#ifndef SIGNAL_HANDLER_H
+#define SIGNAL_HANDLER_H
+
+#include "common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern volatile sig_atomic_t g_shutdown;
+extern volatile sig_atomic_t g_sighup;
+extern volatile sig_atomic_t g_sigchld;
+
+int signal_handlers_init(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SIGNAL_HANDLER_H */
+```
+
+### signal_handler.c
 
 信号处理函数里能干什么？POSIX 白名单很短：`write`、`_exit`、`signal`、`sem_post` 等可以。不能干的事：`printf`、`malloc`、`fopen`——都不是异步信号安全的。
 
 所以信号处理的最佳实践极其简单：**只设一个全局标志，然后马上返回**。主循环负责检查标志，做真正的处理。
 
+替换第 1 篇创建的空壳 `src/signal_handler.c`，写入（include + 全局变量 + handler 函数）：
+
 ```c
+/* src/signal_handler.c */
+#include "signal_handler.h"
+
 volatile sig_atomic_t g_shutdown = 0;  /* SIGTERM / SIGINT */
 volatile sig_atomic_t g_sighup   = 0;  /* SIGHUP */
 volatile sig_atomic_t g_sigchld  = 0;  /* SIGCHLD */
@@ -36,6 +81,8 @@ static void handle_sigchld(int sig) { (void)sig; g_sigchld  = 1; }
 **`sig_atomic_t`** 是平台相关的整数类型，保证读写是原子的（单条 CPU 指令完成）。在 x86 上通常是 `int`。
 
 ## 注册信号
+
+继续在 `src/signal_handler.c` 中添加 `signal_handlers_init` 函数：
 
 ```c
 int signal_handlers_init(void) {
@@ -88,7 +135,9 @@ int signal_handlers_init(void) {
 
 ## systemd 服务配置
 
-程序本身不做守护进程化——systemd 用 `Type=simple` 直接管理：
+程序本身不做守护进程化——systemd 用 `Type=simple` 直接管理。
+
+创建 `systemd/log-collector.service`，写入：
 
 ```ini
 # systemd/log-collector.service
@@ -157,15 +206,16 @@ sudo systemctl reload log-collector
 ```c
 #include <systemd/sd-journal.h>
 
-if (shm_init(&shm_header, &slots, cfg.slot_size, cfg.slot_count) < 0) {
-    sd_journal_print(LOG_ERR, "共享内存初始化失败");
-    ...
+/* 注册信号 */
+if (signal_handlers_init() < 0) {
+    sd_journal_print(LOG_ERR, "信号注册失败");
+    return 1;
 }
 ```
 
 和 `syslog()` 的区别：`syslog()` 发给传统的 syslog 守护进程（rsyslog/syslog-ng），`sd_journal_print()` 直接写给 systemd journal。在 systemd 系统上后者更直接——不需要中间转发。而且 journal 自带结构化字段：`CODE_FILE`（哪个源文件）、`CODE_LINE`（哪一行）、`PRIORITY`（日志级别），不需要自己在消息里编码这些信息。
 
-CMakeLists 里新增了对应的依赖：
+在 `CMakeLists.txt` 中新增 libsystemd 依赖（如果第 1 篇已经写了完整版则跳过此步）：
 
 ```cmake
 find_package(PkgConfig REQUIRED)
@@ -181,17 +231,13 @@ target_include_directories(log_collector PRIVATE ${SYSTEMD_INCLUDE_DIRS})
 $ ./log_collector &
 $ pgrep log_collector
 2631409
-2631411
-2631412
-2631413
-2631414
-# 5 个进程（1 Master + 4 Worker）
+# 1 个进程（Worker 进程池要到第 5 篇才实现，目前只有 Master）
 
 # 测试 SIGTERM 优雅关闭
 $ kill -TERM 2631409
 $ sleep 1
 $ pgrep log_collector
-# 无输出——所有进程已退出
+# 无输出——进程已退出
 ```
 
 ## 你现在应该理解的

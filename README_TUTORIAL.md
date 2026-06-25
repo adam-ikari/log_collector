@@ -10,7 +10,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Master Process (守护进程)              │
+│                    Master Process (systemd Type=simple)        │
 │  ┌─────────────┐  ┌──────────────────────────────────┐  │
 │  │  Signal      │  │  epoll Event Loop                │  │
 │  │  Handler     │  │  - TCP 监听端口                   │  │
@@ -37,7 +37,7 @@
 ## 数据流
 
 ```
-远程客户端 --[TCP/UDP]--> Master(epoll) --[共享内存环形缓冲区]--> Worker --[write]--> /var/log/collector/<client_ip>/YYYY-MM-DD.log
+远程客户端 --[TCP/UDP]--> Master(epoll) --[共享内存环形缓冲区]--> Worker --[write]--> /tmp/log_collector_test/<client_ip>/YYYY-MM-DD.log
 ```
 
 ## 快速开始
@@ -47,14 +47,15 @@
 mkdir build && cd build
 cmake .. && make
 
-# 运行测试
-ctest
-
 # 前台运行
-./log_collector -f -c ../conf/log-collector.conf.example
+./log_collector
 
 # 发送测试日志
 echo "<13>test message" | nc -u 127.0.0.1 5140
+echo "<14>TCP test"       | nc -q1 127.0.0.1 5140
+
+# 查看日志
+cat /tmp/log_collector_test/127.0.0.1/$(date +%Y-%m-%d).log
 ```
 
 ## 项目结构
@@ -66,22 +67,17 @@ log_collector/
 │   └── common.h              # 公共类型、常量
 ├── src/
 │   ├── main.c                # 入口
-│   ├── config.c              # 配置解析
-│   ├── daemon.c              # 守护进程化
-│   ├── signal_handler.c      # 信号处理
-│   ├── master.c              # Master 进程 (epoll + 进程池)
-│   ├── worker.c              # Worker 进程
-│   ├── shm_buffer.c          # 共享内存环形缓冲区
-│   ├── log_parser.c          # syslog 格式解析
-│   └── file_writer.c         # 文件写入
+│   ├── config.h              # 编译期配置
+│   ├── signal_handler.c/h    # 信号处理
+│   ├── master.c/h            # Master 进程 (epoll + 进程池)
+│   ├── worker.c/h            # Worker 进程
+│   ├── shm_buffer.c/h        # 共享内存环形缓冲区
+│   ├── log_parser.c/h        # syslog 格式解析
+│   └── file_writer.c/h       # 文件写入
+├── systemd/
+│   └── log-collector.service
 ├── tests/
-│   ├── test_config.c
-│   ├── test_shm_buffer.c
-│   ├── test_log_parser.c
-│   ├── test_file_writer.c
 │   └── e2e_test.sh
-├── conf/
-│   └── log-collector.conf.example
 └── docs/
     └── tutorial/              # 教学文章
 ```
@@ -93,8 +89,8 @@ log_collector/
 | 序号 | 文章                                                        | 内容                            |
 | ---- | ----------------------------------------------------------- | ------------------------------- |
 | 1    | [搭骨架](docs/tutorial/01-project-setup.md)                 | CMake、common.h、配置系统       |
-| 2    | [变成守护进程](docs/tutorial/02-daemon-and-signals.md)      | daemonize、信号处理、main.c     |
+| 2    | [变成守护进程](docs/tutorial/02-daemon-and-signals.md)      | 信号处理、systemd 服务、main.c  |
 | 3    | [接收网络日志](docs/tutorial/03-epoll-network.md)           | epoll + TCP/UDP                 |
 | 4    | [共享内存环形缓冲区](docs/tutorial/04-shm-ringbuffer.md)    | mmap + 信号量 + 互斥锁          |
 | 5    | [进程池与 Worker](docs/tutorial/05-process-pool.md)         | fork 进程池、日志解析、文件存储 |
-| 6    | [串联测试与调试](docs/tutorial/06-testing-and-debugging.md) | 单元测试、E2E 测试              |
+| 6    | [串联测试与调试](docs/tutorial/06-testing-and-debugging.md) | 命令验证 9 场景、调试备忘 |

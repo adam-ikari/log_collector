@@ -12,6 +12,35 @@
 
 不需要复杂的测试框架。用几个简单的命令，就能验证每个模块是否正常。
 
+## 验证前的准备
+
+确保所有源文件都已实现（前 5 篇完成后应该有的文件）：
+
+```
+log_collector/
+├── CMakeLists.txt
+├── include/
+│   └── common.h              # 第 1 篇
+├── src/
+│   ├── main.c                # 第 2 篇（完整启动流程）
+│   ├── config.h              # 第 1 篇
+│   ├── signal_handler.c/h    # 第 2 篇
+│   ├── master.c/h            # 第 3+5 篇（epoll + 进程池）
+│   ├── worker.c/h            # 第 5 篇
+│   ├── shm_buffer.c/h        # 第 4 篇
+│   ├── log_parser.c/h        # 第 5 篇
+│   └── file_writer.c/h       # 第 5 篇
+└── systemd/
+    └── log-collector.service # 第 2 篇
+```
+
+编译并确认可执行：
+
+```bash
+cd build && cmake .. && make
+# 应该 0 错误 0 警告
+```
+
 ## 验证清单
 
 ### 1. 启动与优雅关闭
@@ -142,7 +171,7 @@ $ cat /tmp/log_collector_test/127.0.0.1/$(date +%Y-%m-%d).log | grep "plain text
 ```bash
 $ kill -TERM $(pgrep log_collector | head -1)
 $ sleep 1
-$ rm -rf /tmp/log_collector_test /dev/shm/log_collector_shm /tmp/log-collector.pid
+$ rm -rf /tmp/log_collector_test /dev/shm/log_collector_shm
 ```
 
 ## 调试备忘
@@ -196,7 +225,7 @@ epoll           ──→ EPOLLET 边缘触发管理 TCP/UDP + 客户端连接
 Socket          ──→ TCP/UDP 监听，接收网络日志
 文件 I/O        ──→ 按 IP+日期 分目录写日志文件
 进程池          ──→ Worker 创建/崩溃重启/优雅关闭的完整模式
-守护进程        ──→ double-fork + setsid + PID 文件
+systemd 服务    ──→ Type=simple 前台运行，sd_journal_print 日志
 CMake           ──→ 构建系统
 ```
 

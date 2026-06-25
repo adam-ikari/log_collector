@@ -10,7 +10,7 @@
 - **Socket**：TCP/UDP、`socket`、`bind`、`listen`、`accept` —— 接收网络日志靠它
 - **epoll**：`epoll_create1`、`epoll_ctl`、`epoll_wait`、EPOLLET —— 高性能 I/O 多路复用
 - **线程池/进程池**：生产者消费者、并发调度 —— 架构设计靠它
-- **守护进程**：double-fork、`setsid` —— 后台运行靠它
+- **守护进程**：systemd Type=simple、`sd_journal_print` —— 后台运行与服务管理靠它
 
 ## 先跑起来再说
 
@@ -20,9 +20,51 @@
 
 这就是"骨架先行"——后面每加一个模块，都是在骨架上长肉。每一篇教程对应一个模块，每完成一篇你都可以编译运行验证。
 
+## 本篇要创建/修改的文件
+
+| 操作 | 文件                            | 说明                                    |
+| ---- | ------------------------------- | --------------------------------------- |
+| 创建 | `CMakeLists.txt`                | 构建系统配置                            |
+| 创建 | `include/common.h`              | 公共类型定义、头文件、常量              |
+| 创建 | `src/config.h`                  | 编译期配置常量                          |
+| 创建 | `src/main.c`                    | 程序入口                                |
+| 创建 | `systemd/log-collector.service` | systemd 服务配置（先创建，第 2 篇用到） |
+| 创建 | `src/signal_handler.c`          | 信号处理空壳（先创建，第 2 篇实现）     |
+| 创建 | `src/signal_handler.h`          | 信号处理头文件                          |
+| 创建 | `src/master.c`                  | Master 空壳（先创建，第 3 篇实现）      |
+| 创建 | `src/master.h`                  | Master 头文件                           |
+| 创建 | `src/shm_buffer.c`              | 共享内存空壳（先创建，第 4 篇实现）     |
+| 创建 | `src/shm_buffer.h`              | 共享内存头文件                          |
+| 创建 | `src/worker.c`                  | Worker 空壳（先创建，第 5 篇实现）      |
+| 创建 | `src/worker.h`                  | Worker 头文件                           |
+| 创建 | `src/log_parser.c`              | 日志解析空壳（先创建，第 5 篇实现）     |
+| 创建 | `src/log_parser.h`              | 日志解析头文件                          |
+| 创建 | `src/file_writer.c`             | 文件写入空壳（先创建，第 5 篇实现）     |
+| 创建 | `src/file_writer.h`             | 文件写入头文件                          |
+
+> **提示**：一次性创建所有空壳文件，让 CMake 从一开始就能编译通过：
+>
+> ```bash
+> cd src
+> for f in signal_handler.c master.c shm_buffer.c worker.c log_parser.c file_writer.c; do
+>     echo '#include "common.h"' > "$f" && echo "/* TODO */" >> "$f"
+> done
+> for f in signal_handler.h master.h shm_buffer.h worker.h log_parser.h file_writer.h; do
+>     echo "#ifndef $(echo ${f%.h} | tr '[:lower:]' '[:upper:]')_H" > "$f"
+>     echo "#define $(echo ${f%.h} | tr '[:lower:]' '[:upper:]')_H" >> "$f"
+>     echo '#include "common.h"' >> "$f"
+>     echo "#endif" >> "$f"
+> done
+> # 同时创建 systemd 服务空文件（内容在第 2 篇写入）
+> mkdir -p ../systemd && touch ../systemd/log-collector.service
+> ```
+
 ## CMake
 
+创建 `CMakeLists.txt`（项目根目录）：
+
 ```cmake
+# CMakeLists.txt — 项目根目录
 cmake_minimum_required(VERSION 3.10)
 project(log_collector C)
 
@@ -98,9 +140,44 @@ log_collector/
 
 一个 `.c` 对应一个职责。这不是教条，是经验——当你在 epoll 代码里找为什么 TCP 连接断掉的时候，你不会想同时看到共享内存的逻辑混在里面。
 
-## common.h — 整个项目的"词汇表"
+## config.h — 编译期配置常量
+
+创建 `src/config.h`，写入：
 
 ```c
+/* src/config.h — 编译期配置（教学项目不需要配置文件） */
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define CFG_LISTEN_ADDR       "0.0.0.0"
+#define CFG_TCP_PORT          5140
+#define CFG_UDP_PORT          5140
+#define CFG_MAX_CONNECTIONS   1024
+#define CFG_WORKER_COUNT      4
+#define CFG_SLOT_SIZE         4096
+#define CFG_SLOT_COUNT        1024
+#define CFG_LOG_DIR           "/tmp/log_collector_test"
+
+#endif
+```
+
+教学项目不需要配置文件解析——编译期常量足够。生产环境中这些值通常来自 YAML/TOML 配置文件或命令行参数。
+
+## common.h — 整个项目的"词汇表"
+
+创建 `include/common.h`，写入以下完整内容：
+
+```c
+/* include/common.h */
+#ifndef COMMON_H
+#define COMMON_H
+
+/*
+ * common.h — 整个项目的"词汇表"
+ *
+ * 所有模块共享的类型定义和常量都在这里。
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,15 +200,25 @@ log_collector/
 #include <semaphore.h>     /* sem_t, sem_init, sem_wait, sem_post */
 #include <limits.h>        /* INT_MAX */
 #include <systemd/sd-journal.h>  /* sd_journal_print */
-```
 
-> **学习技巧**：不需要记住每个头文件。写代码时 `man 2 函数名` 会告诉你要 `#include` 什么。
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-## 三个核心数据结构
+/* ── 共享内存常量 ───────────────────────────── */
 
-### config_t — 程序的所有可调参数（定义在 `include/common.h`）
+#define SHM_NAME     "/log_collector_shm"
+#define SHM_MAGIC    0x4C434F47   /* "LCOG" 四个字母的 ASCII */
+#define SHM_VERSION  1
 
-```c
+/* ── 网络常量 ───────────────────────────────── */
+
+#define MAX_EVENTS         1024
+#define TCP_RECV_BUF_SIZE  65536
+#define UDP_RECV_BUF_SIZE  65536
+
+/* ── 配置结构体 ────────────────────────────── */
+
 typedef struct {
     char     listen_addr[64];    /* 监听地址，默认 0.0.0.0 */
     int      tcp_port;           /* TCP 端口 */
@@ -142,33 +229,20 @@ typedef struct {
     uint64_t slot_count;         /* 共享内存槽位数量 */
     char     log_dir[256];       /* 日志存储根目录 */
 } config_t;
-```
 
-教学项目不需要配置文件。参数直接用 `#define` 写在 `src/config.h` 里，改完重新编译：
-
-```c
-/* src/config.h */
-#define CFG_LISTEN_ADDR       "0.0.0.0"
-#define CFG_TCP_PORT          5140
-#define CFG_UDP_PORT          5140
-#define CFG_MAX_CONNECTIONS   1024
-#define CFG_WORKER_COUNT      4
-#define CFG_SLOT_SIZE         4096
-#define CFG_SLOT_COUNT        1024
-#define CFG_LOG_DIR           "/tmp/log_collector_test"
-```
-
-每个默认值的考量：
-
-- **5140 端口**：syslog 标准端口，与 rsyslog/syslog-ng 兼容
-- **4 个 Worker**：IO 密集型任务，Worker 数量不需要等于 CPU 核数。4 个足够处理每秒数千条日志
-- **4096 字节槽位**：一页内存的大小（x86 MMU 页面），与页对齐减少 TLB 缺失
-- **1024 个槽位**：4096 × 1024 = 4MB 共享内存，对现代系统来说很小，但足够缓冲高峰期日志
-- **`/tmp/log_collector_test`**：测试友好，不需要 root 权限
-
-### shm_header_t — 共享内存的元数据
-
-```c
+/*
+ * 共享内存头部 — 存储在所有进程间共享的元数据
+ *
+ * magic/version  — 校验共享内存是否由本程序创建
+ * buffer_size    — mmap 映射的总字节数
+ * slot_size      — 每个槽位的字节数
+ * slot_count     — 槽位总数，环形队列容量
+ * write_pos      — Master 写入位置（生产者指针）
+ * read_pos       — Worker 读取位置（消费者指针）
+ * mutex          — 跨进程互斥锁，保护 write_pos/read_pos 的并发访问
+ * sem_free       — 空闲槽位计数信号量（初始 = slot_count）
+ * sem_used       — 已用槽位计数信号量（初始 = 0）
+ */
 typedef struct {
     uint32_t magic;               /* 魔数：0x4C434F47 = "LCOG" */
     uint32_t version;
@@ -181,48 +255,64 @@ typedef struct {
     sem_t  sem_free;              /* 空闲槽位计数 */
     sem_t  sem_used;              /* 已用槽位计数 */
 } shm_header_t;
-```
 
-这里把互斥锁和信号量的知识组合起来了。第 4 篇会深入讲为什么这样设计。
-
-`SHM_MAGIC = 0x4C434F47` 是 "LCOG" 四个字母的 ASCII 码拼成的 32 位整数（L=0x4C, C=0x43, O=0x4F, G=0x47）。Worker 连接共享内存时先检查魔数，防止连到错误的共享内存对象。
-
-### log_slot_t — 槽位头部
-
-```c
+/*
+ * 日志槽位 — 环形缓冲区中的每个条目
+ *
+ * client_addr — 客户端地址（IPv4/IPv6 通用，128 字节）
+ * protocol    — 0=TCP, 1=UDP
+ * data_len    — 日志内容实际长度
+ * timestamp   — 接收时间（epoch 秒）
+ * data        — 日志正文（最大 4096 字节，与槽位大小对齐）
+ */
 typedef struct {
-    struct sockaddr_storage client_addr;  /* 客户端地址（IPv4/IPv6 通用） */
-    uint8_t  protocol;                    /* 0=TCP, 1=UDP */
-    uint32_t data_len;                    /* 日志实际长度 */
-    uint64_t timestamp;                   /* 接收时间（epoch 秒） */
-    char     data[4096];                  /* 日志正文 */
+    struct sockaddr_storage client_addr;
+    uint8_t  protocol;
+    uint32_t data_len;
+    uint64_t timestamp;
+    char     data[4096];
 } log_slot_t;
-```
 
-`data[4096]` 是固定大小数组，与槽位大小对齐（`CFG_SLOT_SIZE = 4096`）。C 和 C++ 都支持固定大小数组，代码直观：`slot->data` 就是日志内容，不需要指针算术。
+/* ── 全局信号标志 ──────────────────────────── */
 
-## C/C++ 兼容
-
-C++ 编译器会改编（mangle）函数名以支持重载，导致链接时找不到 C 编译的符号。在所有头文件中用 `extern "C"` 包裹函数声明即可解决：
-
-```c
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int shm_init(shm_header_t **header, void **slots, ...);
-// ... 其他函数声明
+extern volatile sig_atomic_t g_shutdown;
+extern volatile sig_atomic_t g_sighup;
+extern volatile sig_atomic_t g_sigchld;
 
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* COMMON_H */
 ```
 
-`#ifdef __cplusplus` 只有 C++ 编译器定义，C 编译器不受影响。项目中 8 个头文件都做了这个处理。
+> **学习技巧**：不需要记住每个头文件。写代码时 `man 2 函数名` 会告诉你要 `#include` 什么。
+
+`#ifdef __cplusplus` 只有 C++ 编译器定义，C 编译器不受影响。项目中除 `config.h`（纯宏定义，不需要）外的 7 个头文件都做了这个处理。
 
 ## 主函数：把零件串起来
 
+创建 `src/main.c`，写入：
+
 ```c
+/* src/main.c — 程序入口：串联所有模块 */
+#include "common.h"
+#include "config.h"
+#include "signal_handler.h"
+#include "shm_buffer.h"
+#include "master.h"
+
+static void print_usage(const char *prog) {
+    fprintf(stderr, "用法: %s [-h]\n", prog);
+    fprintf(stderr, "  -h   显示帮助\n");
+}
+
+/*
+ * 启动流程：
+ *   解析参数 → 注册信号 → 创建共享内存 → Master 主循环 → 清理
+ *
+ * 守护进程化由 systemd Type=simple 负责，程序本身只做前台运行。
+ */
 int main(int argc, char *argv[]) {
     config_t cfg = {
         .listen_addr     = CFG_LISTEN_ADDR,
@@ -238,7 +328,6 @@ int main(int argc, char *argv[]) {
     void *slots = NULL;
     int opt, rc;
 
-    /* 1. 解析参数：只认 -h（帮助） */
     while ((opt = getopt(argc, argv, "h")) != -1) {
         switch (opt) {
         case 'h': print_usage(argv[0]); return 0;
@@ -246,22 +335,23 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* 2. 注册信号 */
+    sd_journal_print(LOG_INFO, "Log Collector 启动 (TCP:%d UDP:%d workers:%d)",
+                     cfg.tcp_port, cfg.udp_port, cfg.worker_count);
+
     if (signal_handlers_init() < 0) {
         sd_journal_print(LOG_ERR, "信号注册失败");
         return 1;
     }
 
-    /* 3. 创建共享内存 */
     if (shm_init(&shm_header, &slots, cfg.slot_size, cfg.slot_count) < 0) {
         sd_journal_print(LOG_ERR, "共享内存初始化失败");
         return 1;
     }
 
-    /* 4. Master 主循环（fork Worker + epoll） */
     rc = master_run(&cfg, shm_header, slots);
 
-    /* 5. 清理 */
+    sd_journal_print(LOG_INFO, "Log Collector 已退出 (rc=%d)", rc);
+
     shm_destroy(shm_header, slots, cfg.slot_count);
     return rc;
 }
@@ -277,7 +367,7 @@ int main(int argc, char *argv[]) {
 | 2    | 注册信号处理    | signal_handler.c — signal + siginterrupt   |
 | 3    | 创建共享内存    | shm_buffer.c — shm_open + mmap + 锁/信号量 |
 | 4    | Master 事件循环 | master.c — epoll + fork Worker 池          |
-| 5    | 清理资源        | shm_unlink                                |
+| 5    | 清理资源        | shm_destroy                                |
 
 ## 系统依赖安装
 
