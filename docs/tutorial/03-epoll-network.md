@@ -131,6 +131,15 @@ static int set_nonblock(int fd) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
+/* 辅助函数：解析监听地址，支持 0.0.0.0 和 * 表示 INADDR_ANY */
+static int resolve_addr(const char *str, struct sockaddr_in *addr) {
+    if (strcmp(str, "0.0.0.0") == 0 || strcmp(str, "*") == 0) {
+        addr->sin_addr.s_addr = INADDR_ANY;
+        return 0;
+    }
+    return inet_pton(AF_INET, str, &addr->sin_addr) <= 0 ? -1 : 0;
+}
+
 /* ── 占位函数（第 5 篇实现） ── */
 static void reap_workers(pid_t *pids, int count, const config_t *cfg) {
     (void)pids; (void)count; (void)cfg;
@@ -151,15 +160,14 @@ static int create_tcp_listener(const config_t *cfg) {
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
     /* 非阻塞：epoll 边缘触发的前提 */
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if (set_nonblock(fd) < 0) { perror("fcntl TCP"); close(fd); return -1; }
 
     struct sockaddr_in addr = { .sin_family = AF_INET,
                                 .sin_port = htons((uint16_t)cfg->tcp_port) };
-    if (strcmp(cfg->listen_addr, "0.0.0.0") == 0)
-        addr.sin_addr.s_addr = INADDR_ANY;
-    else
-        inet_pton(AF_INET, cfg->listen_addr, &addr.sin_addr);
+    if (resolve_addr(cfg->listen_addr, &addr) < 0) {
+        fprintf(stderr, "Invalid listen_addr: %s\n", cfg->listen_addr);
+        close(fd); return -1;
+    }
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind TCP"); close(fd); return -1;
@@ -185,15 +193,14 @@ static int create_udp_listener(const config_t *cfg) {
     if (fd < 0) { perror("socket UDP"); return -1; }
 
     /* 非阻塞 */
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if (set_nonblock(fd) < 0) { perror("fcntl UDP"); close(fd); return -1; }
 
     struct sockaddr_in addr = { .sin_family = AF_INET,
                                 .sin_port = htons((uint16_t)cfg->udp_port) };
-    if (strcmp(cfg->listen_addr, "0.0.0.0") == 0)
-        addr.sin_addr.s_addr = INADDR_ANY;
-    else
-        inet_pton(AF_INET, cfg->listen_addr, &addr.sin_addr);
+    if (resolve_addr(cfg->listen_addr, &addr) < 0) {
+        fprintf(stderr, "Invalid listen_addr: %s\n", cfg->listen_addr);
+        close(fd); return -1;
+    }
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind UDP"); close(fd); return -1;
@@ -247,10 +254,8 @@ int master_run(const config_t *cfg, shm_header_t *header, void *slots) {
 
     /* 5. epoll 事件主循环 */
     while (!g_shutdown) {
-        if (g_sigchld) {
-            g_sigchld = 0;
-            reap_workers(worker_pids, cfg->worker_count, cfg);
-        }
+        if (g_sigchld) { g_sigchld = 0; reap_workers(worker_pids, cfg->worker_count, cfg); }
+        if (g_sighup)  { g_sighup  = 0; /* TODO: 配置热重载 */ }
 
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 100);
         if (nfds < 0) {
@@ -309,6 +314,7 @@ cleanup:
     if (header) shm_send_sentinels(header, cfg->worker_count);
     if (worker_pids) {
         wait_workers(worker_pids, cfg->worker_count);
+        sd_journal_print(LOG_INFO, "所有 Worker 已退出");
         free(worker_pids);
     }
     if (clients) {
@@ -494,7 +500,7 @@ static void handle_udp_data(int udp_fd, shm_header_t *header, void *slots) {
 
         buf[n] = '\0';
         if (n > 0 && buf[n - 1] == '\n') buf[--n] = '\0';
-        if (n > 0) shm_produce(header, slots, &addr, 1, buf, n, ts);
+        if (n > 0) shm_produce(header, slots, &addr, 1, buf, (uint32_t)n, ts);
     }
 }
 ```

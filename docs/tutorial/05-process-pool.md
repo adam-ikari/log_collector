@@ -171,6 +171,7 @@ static pid_t *fork_workers(const config_t *cfg) {
             _exit(0);
         } else if (pid > 0) {
             pids[i] = pid;        /* 父进程：记录子进程 PID */
+            sd_journal_print(LOG_INFO, "Worker %d 已启动 (PID=%d)", i, pid);
         } else {
             sd_journal_print(LOG_ERR, "fork worker %d 失败: %s",
                              i, strerror(errno));
@@ -294,6 +295,29 @@ PRI = 13 = 0b1101
 
 **为什么用 `memchr` 而非 `strchr`？** 日志消息可能包含二进制数据或不存在 `\0` 终止符。`memchr` 安全地限制在 `len` 范围内，不会越界。
 
+继续在 `src/log_parser.c` 中添加 `addr_to_str` 辅助函数——将 `sockaddr_storage` 转换为 IP 字符串，支持 IPv4 和 IPv6：
+
+```c
+/*
+ * addr_to_str — 将 sockaddr_storage 转换为 IP 字符串
+ *
+ * 支持 IPv4 (AF_INET) 和 IPv6 (AF_INET6)。
+ * 未知地址族返回 "unknown"。
+ */
+static const char *addr_to_str(const struct sockaddr_storage *addr,
+                               char *buf, size_t buf_size) {
+    if (addr->ss_family == AF_INET) {
+        const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
+        inet_ntop(AF_INET, &sin->sin_addr, buf, (socklen_t)buf_size);
+    } else if (addr->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
+        inet_ntop(AF_INET6, &sin6->sin6_addr, buf, (socklen_t)buf_size);
+    } else {
+        snprintf(buf, buf_size, "unknown");
+    }
+    return buf;
+}
+
 severity 映射表：
 
 | 值  | 标签    | 含义             |
@@ -329,29 +353,24 @@ int log_parser_format(const struct sockaddr_storage *addr,
                       char *out, size_t out_size) {
     char ip_str[INET6_ADDRSTRLEN];
     char time_buf[32];
-    time_t ts = (time_t)recv_timestamp;
+    time_t ts;
     struct tm tm_info;
     int severity = 7;  /* 默认 debug */
     int pri_len;
+    const char *body;
+    uint32_t body_len;
+    int written;
 
     /* 时间戳 */
+    ts = (time_t)recv_timestamp;
     localtime_r(&ts, &tm_info);
     strftime(time_buf, sizeof(time_buf), "%Y-%m-%dT%H:%M:%S%z", &tm_info);
 
-    /* IP 地址（支持 IPv4 和 IPv6） */
-    if (addr->ss_family == AF_INET)
-        inet_ntop(AF_INET, &((struct sockaddr_in *)addr)->sin_addr,
-                  ip_str, (socklen_t)sizeof(ip_str));
-    else if (addr->ss_family == AF_INET6)
-        inet_ntop(AF_INET6, &((struct sockaddr_in6 *)addr)->sin6_addr,
-                  ip_str, (socklen_t)sizeof(ip_str));
-    else
-        snprintf(ip_str, sizeof(ip_str), "unknown");
+    /* IP 地址 */
+    addr_to_str(addr, ip_str, sizeof(ip_str));
 
     /* 提取 PRI */
     pri_len = extract_pri(raw_msg, raw_len, &severity);
-    const char *body;
-    uint32_t body_len;
     if (pri_len > 0) {
         body = raw_msg + pri_len;
         body_len = raw_len - (uint32_t)pri_len;
@@ -366,13 +385,13 @@ int log_parser_format(const struct sockaddr_storage *addr,
     }
 
     /* 格式化: timestamp ip [level] message */
-    int written = snprintf(out, out_size, "%s %s [%s] ",
-                           time_buf, ip_str, severity_names[severity]);
+    written = snprintf(out, out_size, "%s %s [%s] ",
+                       time_buf, ip_str, severity_names[severity]);
     if (written < 0 || (size_t)written >= out_size) return -1;
 
     /* 追加消息体（防溢出） */
     size_t remaining = out_size - (size_t)written;
-    size_t copy_len = body_len < remaining - 1 ? body_len : remaining - 1;
+    size_t copy_len = (size_t)body_len < remaining - 1 ? (size_t)body_len : remaining - 1;
     memcpy(out + written, body, copy_len);
     written += (int)copy_len;
 
@@ -466,7 +485,7 @@ int file_writer_write(file_writer_t *fw, const char *ip,
         /* 创建目录 <log_dir>/<ip> */
         char dir_path[320];
         snprintf(dir_path, sizeof(dir_path), "%s/%s", fw->log_dir, ip);
-        ensure_directory(dir_path);
+        if (ensure_directory(dir_path) < 0) return -1;
 
         /* 打开/创建日志文件 */
         char file_path[384];
@@ -522,7 +541,7 @@ static void reap_workers(pid_t *pids, int count, const config_t *cfg) {
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         for (int i = 0; i < count; i++) {
             if (pids[i] == pid) {
-                sd_journal_print(LOG_WARNING, "Worker %d 退出 (PID=%d), 正在重启...", i, pid);
+                sd_journal_print(LOG_WARNING, "Worker %d 异常退出 (PID=%d), 正在重启...", i, pid);
                 pid_t new_pid = fork();
                 if (new_pid == 0) {
                     reset_signals();
